@@ -16,10 +16,11 @@
       <nav class="nav-links" aria-label="页面导航">
         <a href="#plans">出游计划</a>
         <a href="#records">出游记录</a>
-        <a href="#wishlist">心愿清单</a>
+        <a href="#todo">想做的事</a>
         <a href="#gallery">相册</a>
       </nav>
     </header>
+    <div class="cloud-status" id="cloud-status" role="status">正在连接后端...</div>
 
     <main id="home">
       <section class="hero">
@@ -28,44 +29,44 @@
           <p class="eyebrow">For us, every road has a date</p>
           <h1>记录我们一起走过的城市、海边和日落。</h1>
           <p class="hero-copy">
-            这里先放我们的出游计划和旅行回忆。以后可以继续加照片墙、纪念日提醒、地图路线、预算清单和只属于我们的留言板。
+            这里会慢慢装下我们的旅行计划、出游记录、想一起完成的小事，以及每一次出门时留下的照片。
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="#plans">查看下一站</a>
-            <a class="button secondary" href="#records">翻旅行记录</a>
+            <a class="button primary" href="#plans">填写下一站</a>
+            <a class="button secondary" href="#todo">写下想做的事</a>
           </div>
         </div>
-        <aside class="next-trip-card" aria-label="下一次出游倒计时">
+        <aside class="next-trip-card" aria-label="下一次出游">
           <span class="card-kicker">下一次出游</span>
-          <strong>杭州周末慢游</strong>
-          <span class="trip-date">2026.06.20 - 06.22</span>
-          <div class="countdown" data-trip-date="2026-06-20T09:00:00+08:00">
-            <span id="days-left">--</span>
-            <small>天后出发</small>
+          <strong>还没有填写</strong>
+          <span class="trip-date">在出游计划里写下第一站</span>
+          <div class="countdown">
+            <span>--</span>
+            <small>等待出发</small>
           </div>
         </aside>
       </section>
 
       <section class="section intro-grid" aria-label="网站功能概览">
         <div>
-          <span class="section-label">我们的旅行节奏</span>
-          <h2>先把重要的期待和回忆收好。</h2>
+          <span class="section-label">Our Space</span>
+          <h2>先留出位置，等你们一点点填满。</h2>
         </div>
         <div class="feature-grid">
           <article class="feature-item">
             <span class="feature-icon">01</span>
             <h3>计划</h3>
-            <p>整理目的地、日期、行程亮点和待办事项。</p>
+            <p>填写目的地、时间和出发前要准备的事。</p>
           </article>
           <article class="feature-item">
             <span class="feature-icon">02</span>
             <h3>记录</h3>
-            <p>保存每次旅行的小故事、照片和当时的心情。</p>
+            <p>写下旅行当天的小故事、路线和心情。</p>
           </article>
           <article class="feature-item">
             <span class="feature-icon">03</span>
-            <h3>心愿</h3>
-            <p>把想一起去的地方先放进清单，慢慢实现。</p>
+            <h3>照片</h3>
+            <p>上传本地照片，先在页面里预览你们的相册。</p>
           </article>
         </div>
       </section>
@@ -78,41 +79,9 @@
           </div>
           <button class="ghost-button" type="button" data-open-panel="plan">添加计划</button>
         </div>
-
-        <div class="plans-layout">
-          <article class="plan-main">
-            <img
-              src="https://images.unsplash.com/photo-1549880338-65ddcdfd017b?auto=format&fit=crop&w=1200&q=80"
-              alt="山间湖泊旅行风景"
-            />
-            <div class="plan-main-content">
-              <span class="tag">最期待</span>
-              <h3>杭州周末慢游</h3>
-              <p>西湖边散步、去灵隐寺、找一家安静咖啡馆写明信片，晚上吃热乎乎的杭帮菜。</p>
-              <ul class="check-list">
-                <li>订高铁票和住宿</li>
-                <li>准备拍立得相纸</li>
-                <li>收藏 3 家想吃的小店</li>
-              </ul>
-            </div>
-          </article>
-
-          <div class="plan-list" id="plan-list">
-            <article class="mini-plan">
-              <span class="date-pill">07.12</span>
-              <div>
-                <h3>海边看日出</h3>
-                <p>带一条薄毯，凌晨出门，等第一束光落在海面上。</p>
-              </div>
-            </article>
-            <article class="mini-plan">
-              <span class="date-pill">09.30</span>
-              <div>
-                <h3>秋天去南京</h3>
-                <p>梧桐大道、博物院、秦淮河夜游和一碗热鸭血粉丝汤。</p>
-              </div>
-            </article>
-          </div>
+        <div class="empty-state" id="plan-list">
+          <p>还没有出游计划。</p>
+          <span>点击“添加计划”，把下一次想去的地方写下来。</span>
         </div>
       </section>
 
@@ -124,38 +93,30 @@
           </div>
           <button class="ghost-button" type="button" data-open-panel="record">写一条记录</button>
         </div>
-
-        <div class="timeline" id="record-list">
-          <article class="timeline-item">
-            <time>2026.05.01</time>
-            <div>
-              <h3>第一次认真做旅行攻略</h3>
-              <p>我们把想吃的店、想拍照的街、想买的小纪念品都列了出来。虽然最后只完成了一半，但每一步都很开心。</p>
-            </div>
-          </article>
-          <article class="timeline-item">
-            <time>2026.04.06</time>
-            <div>
-              <h3>傍晚散步到江边</h3>
-              <p>没有特别安排，只是一起走了很久。风很轻，路灯亮起来的时候，我们决定以后要多记录这样的普通日子。</p>
-            </div>
-          </article>
+        <div class="timeline empty-state" id="record-list">
+          <p>还没有出游记录。</p>
+          <span>旅行回来后，可以把那天发生的事写在这里。</span>
         </div>
       </section>
 
-      <section class="section split-section" id="wishlist">
+      <section class="section split-section" id="todo">
         <div>
-          <span class="section-label">Wish List</span>
-          <h2>一起想去的地方</h2>
+          <span class="section-label">Together List</span>
+          <h2>一起想做的事</h2>
           <p class="muted">
-            后续可以把这里做成可勾选、可排序、可加预算和地图坐标的旅行愿望清单。
+            不只限于旅行，也可以写吃一顿饭、看一场电影、拍一组照片，或者任何想一起完成的小事。
           </p>
         </div>
-        <div class="wishlist">
-          <label><input type="checkbox" /> 去一次冬天的北海道</label>
-          <label><input type="checkbox" checked /> 拍一组海边合照</label>
-          <label><input type="checkbox" /> 在陌生城市坐一次末班公交</label>
-          <label><input type="checkbox" /> 收集 10 张旅行车票</label>
+        <div class="todo-board">
+          <form class="inline-form" id="todo-form">
+            <label class="sr-only" for="todo-input">添加想做的事</label>
+            <input id="todo-input" name="todo" type="text" placeholder="写下一件想一起做的事" required />
+            <button class="button primary" type="submit">添加</button>
+          </form>
+          <div class="todo-list empty-state" id="todo-list">
+            <p>还没有想做的事。</p>
+            <span>从上面的输入框开始添加。</span>
+          </div>
         </div>
       </section>
 
@@ -163,15 +124,18 @@
         <div class="section-heading">
           <div>
             <span class="section-label">Gallery</span>
-            <h2>相册预览</h2>
+            <h2>我们的相册</h2>
           </div>
-          <span class="soft-note">之后可接入本地上传或云端相册</span>
+          <label class="upload-button">
+            上传照片
+            <input id="photo-input" type="file" accept="image/*" multiple />
+          </label>
         </div>
-        <div class="gallery-grid">
-          <img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80" alt="草地和湖边旅行照片" />
-          <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80" alt="海边旅行照片" />
-          <img src="https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=80" alt="森林道路旅行照片" />
+        <div class="gallery-upload">
+          <p>还没有照片。</p>
+          <span>点击“上传照片”选择本地图片，照片会先显示在这个页面里。</span>
         </div>
+        <div class="gallery-grid" id="gallery-grid" aria-live="polite"></div>
       </section>
     </main>
 
@@ -199,9 +163,10 @@
     </div>
 
     <footer class="footer">
-      <p>Made for our little trips. 下一版可以继续开发登录、照片上传、地图路线和纪念日提醒。</p>
+      <p>Made for our little trips. 下一版可以继续开发登录、云端保存、地图路线和纪念日提醒。</p>
     </footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>
   </body>
 </html>
