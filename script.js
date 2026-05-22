@@ -1,5 +1,5 @@
 const supabaseConfig = {
-  url: "https://ueqigutndwkfuffzkcxo.supabase.co",
+  url: "https://ueqlgutndwkfuffzkcxo.supabase.co",
   key: "sb_publishable_EplbiVXxWhAdBKKSF70RVQ_pPls9SSw",
 };
 
