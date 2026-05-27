@@ -14,6 +14,7 @@
         <span>恋爱旅行簿</span>
       </a>
       <nav class="nav-links" aria-label="页面导航">
+        <a href="#anniversary">纪念日</a>
         <a href="#plans">出游计划</a>
         <a href="#records">出游记录</a>
         <a href="#todo">想做的事</a>
@@ -24,7 +25,13 @@
 
     <main id="home">
       <section class="hero">
-        <div class="hero-media" aria-hidden="true"></div>
+        <div class="hero-media" aria-hidden="true">
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1800&q=85'); --slide-index: 0"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1800&q=85'); --slide-index: 1"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85'); --slide-index: 2"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=1800&q=85'); --slide-index: 3"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1800&q=85'); --slide-index: 4"></span>
+        </div>
         <div class="hero-content">
           <p class="eyebrow">For us, every road has a date</p>
           <h1>记录我们一起走过的城市、海边和日落。</h1>
@@ -32,7 +39,7 @@
             这里会慢慢装下我们的旅行计划、出游记录、想一起完成的小事，以及每一次出门时留下的照片。
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="#plans">填写下一站</a>
+            <a class="button primary" href="#anniversary">看纪念日</a>
             <a class="button secondary" href="#todo">写下想做的事</a>
           </div>
         </div>
@@ -65,9 +72,40 @@
           </article>
           <article class="feature-item">
             <span class="feature-icon">03</span>
+            <h3>纪念日</h3>
+            <p>自动计算在一起的天数，提前看到下一次值得庆祝的日子。</p>
+          </article>
+          <article class="feature-item">
+            <span class="feature-icon">04</span>
             <h3>照片</h3>
             <p>上传本地照片，先在页面里预览你们的相册。</p>
           </article>
+        </div>
+      </section>
+
+      <section class="section anniversary-section" id="anniversary">
+        <div class="section-heading">
+          <div>
+            <span class="section-label">Anniversary</span>
+            <h2>我们的纪念日</h2>
+          </div>
+          <span class="soft-note" id="love-start-date">从相遇变成我们</span>
+        </div>
+        <div class="anniversary-layout">
+          <article class="days-card">
+            <span>我们已经在一起</span>
+            <strong id="love-days">262</strong>
+            <p>天</p>
+          </article>
+          <div class="anniversary-board">
+            <div class="anniversary-copy">
+              <h3>把普通日子也认真记住</h3>
+              <p>
+                这里会自动提醒 300 天、365 天、520 天和更远的纪念日。你们可以提前安排一顿饭、一束花、一场短途旅行，或者只是认真说一句“今天也很喜欢你”。
+              </p>
+            </div>
+            <div class="milestone-list" id="milestone-list" aria-live="polite"></div>
+          </div>
         </div>
       </section>
 

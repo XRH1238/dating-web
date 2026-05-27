@@ -11,6 +11,9 @@ const tables = {
 };
 
 const storageBucket = "love-photos";
+const todoPageSize = 5;
+const loveStartDate = "2025-09-06";
+const milestoneDays = [300, 365, 520, 666, 999, 1314];
 
 const state = {
   client: null,
@@ -19,6 +22,7 @@ const state = {
   records: [],
   todos: [],
   photos: [],
+  todoPage: 1,
 };
 
 const panel = document.querySelector("#quick-panel");
@@ -154,6 +158,7 @@ async function handleTodoSubmit(event) {
 
   try {
     await createItem(tables.todos, { text: value, done: false }, "todos");
+    state.todoPage = 1;
     input.value = "";
     renderTodos();
   } catch (error) {
@@ -247,11 +252,68 @@ function requireBackend() {
 }
 
 function renderAll() {
+  renderAnniversary();
   renderPlans();
   renderRecords();
   renderTodos();
   renderPhotos();
   renderNextTrip();
+}
+
+function renderAnniversary() {
+  const start = parseDate(loveStartDate);
+  const today = startOfToday();
+  const loveDays = Math.max(0, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+  const loveDaysEl = document.querySelector("#love-days");
+  const startDateEl = document.querySelector("#love-start-date");
+  const list = document.querySelector("#milestone-list");
+
+  loveDaysEl.textContent = String(loveDays);
+  startDateEl.textContent = `从 ${formatDisplayDate(start)} 开始`;
+  list.innerHTML = getMilestones(start, loveDays)
+    .slice(0, 4)
+    .map(renderMilestoneItem)
+    .join("");
+}
+
+function getMilestones(start, loveDays) {
+  const fixedMilestones = milestoneDays.map((days) => {
+    const date = addDays(start, days);
+    return {
+      title: `在一起 ${days} 天`,
+      date,
+      remaining: Math.max(0, days - loveDays),
+    };
+  });
+
+  const nextYear = Math.max(1, Math.ceil(loveDays / 365));
+  const yearlyMilestones = [nextYear, nextYear + 1].map((year) => {
+    const days = year * 365;
+    const date = addDays(start, days);
+    return {
+      title: `${year} 周年纪念日`,
+      date,
+      remaining: Math.max(0, days - loveDays),
+    };
+  });
+
+  return [...fixedMilestones, ...yearlyMilestones]
+    .filter((milestone) => milestone.remaining >= 0)
+    .sort((a, b) => a.remaining - b.remaining);
+}
+
+function renderMilestoneItem(milestone) {
+  const hint = milestone.remaining === 0 ? "今天就是" : `还有 ${milestone.remaining} 天`;
+
+  return `
+    <article class="milestone-item">
+      <div>
+        <h3>${escapeHtml(milestone.title)}</h3>
+        <p>${escapeHtml(formatDisplayDate(milestone.date))}</p>
+      </div>
+      <span>${escapeHtml(hint)}</span>
+    </article>
+  `;
 }
 
 function renderPlans() {
@@ -329,8 +391,18 @@ function renderTodos() {
     return;
   }
 
+  const pageCount = getTodoPageCount();
+  state.todoPage = Math.min(Math.max(state.todoPage, 1), pageCount);
+  const startIndex = (state.todoPage - 1) * todoPageSize;
+  const visibleTodos = state.todos.slice(startIndex, startIndex + todoPageSize);
+
   list.className = "todo-list";
-  list.innerHTML = state.todos.map(renderTodoItem).join("");
+  list.innerHTML = `
+    <div class="todo-page-items">
+      ${visibleTodos.map(renderTodoItem).join("")}
+    </div>
+    ${renderTodoPagination(pageCount)}
+  `;
 
   list.querySelectorAll("[data-toggle-todo]").forEach((checkbox) => {
     checkbox.addEventListener("change", async () => {
@@ -356,6 +428,14 @@ function renderTodos() {
   list.querySelectorAll("[data-delete-todo]").forEach((button) => {
     button.addEventListener("click", async () => {
       await removeItem(tables.todos, button.dataset.deleteTodo, "todos");
+      state.todoPage = Math.min(state.todoPage, getTodoPageCount());
+      renderTodos();
+    });
+  });
+
+  list.querySelectorAll("[data-todo-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.todoPage = Number(button.dataset.todoPage);
       renderTodos();
     });
   });
@@ -373,6 +453,42 @@ function renderTodoItem(todo) {
         <button type="button" data-delete-todo="${escapeHtml(todo.id)}">删除</button>
       </div>
     </div>
+  `;
+}
+
+function getTodoPageCount() {
+  return Math.max(1, Math.ceil(state.todos.length / todoPageSize));
+}
+
+function renderTodoPagination(pageCount) {
+  if (pageCount <= 1) {
+    return "";
+  }
+
+  const pageButtons = Array.from({ length: pageCount }, (_, index) => {
+    const page = index + 1;
+    return `
+      <button
+        type="button"
+        class="${page === state.todoPage ? "is-active" : ""}"
+        data-todo-page="${page}"
+        aria-current="${page === state.todoPage ? "page" : "false"}"
+      >
+        ${page}
+      </button>
+    `;
+  }).join("");
+
+  return `
+    <nav class="todo-pagination" aria-label="想做的事分页">
+      <button type="button" data-todo-page="${state.todoPage - 1}" ${state.todoPage === 1 ? "disabled" : ""}>
+        上一页
+      </button>
+      <div class="todo-page-numbers">${pageButtons}</div>
+      <button type="button" data-todo-page="${state.todoPage + 1}" ${state.todoPage === pageCount ? "disabled" : ""}>
+        下一页
+      </button>
+    </nav>
   `;
 }
 
@@ -477,6 +593,19 @@ function parseDate(date) {
   const text = String(date || "").trim().replace(/\./g, "-").replace(/\//g, "-");
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function addDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function formatDisplayDate(date) {
+  return `${date.getFullYear()}年${String(date.getMonth() + 1).padStart(2, "0")}月${String(date.getDate()).padStart(
+    2,
+    "0"
+  )}日`;
 }
 
 function startOfToday() {
