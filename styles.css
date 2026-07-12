@@ -401,7 +401,7 @@ p {
 
 .map-board {
   display: grid;
-  grid-template-columns: minmax(220px, 0.3fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: 22px;
   align-items: start;
   margin-bottom: 22px;
@@ -418,7 +418,7 @@ p {
 
 .map-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.32fr);
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.28fr);
   gap: 14px;
   align-items: stretch;
 }
@@ -427,7 +427,7 @@ p {
 .china-map {
   position: relative;
   min-height: 430px;
-  height: 520px;
+  height: 560px;
   overflow: hidden;
   border: 1px solid rgba(82, 130, 112, 0.24);
   border-radius: 8px;
@@ -459,17 +459,17 @@ p {
   transform-origin: center;
 }
 
-.county-layer path {
-  fill: rgba(248, 251, 244, 0.88);
-  stroke: rgba(83, 126, 111, 0.28);
-  stroke-width: 0.5;
+.city-layer path {
+  fill: #fcfaf5;
+  stroke: rgba(119, 108, 99, 0.42);
+  stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
 }
 
 .province-layer path {
   fill: none;
-  stroke: rgba(55, 100, 86, 0.72);
-  stroke-width: 1.7;
+  stroke: rgba(90, 76, 68, 0.64);
+  stroke-width: 1.45;
   vector-effect: non-scaling-stroke;
 }
 
@@ -738,15 +738,16 @@ p {
 
 .milestone-list {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 .milestone-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px;
+  display: grid;
+  align-content: space-between;
+  min-height: 118px;
+  gap: 12px;
+  padding: 16px;
 }
 
 .milestone-item h3 {
@@ -771,6 +772,16 @@ p {
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.milestone-item.is-done {
+  border-color: rgba(82, 130, 112, 0.3);
+  background: rgba(237, 247, 239, 0.74);
+}
+
+.milestone-item.is-done span {
+  color: #356c53;
+  background: rgba(218, 238, 223, 0.9);
 }
 
 .tag,
@@ -1288,6 +1299,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .milestone-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .photo-card img,
   .photo-card:nth-child(3n + 2) img {
     height: 260px;
@@ -1317,6 +1332,10 @@ textarea {
   }
 
   .route-segment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .milestone-list {
     grid-template-columns: 1fr;
   }
 

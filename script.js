@@ -5,7 +5,7 @@ const supabaseConfig = {
 };
 const tables = { plans: "love_plans", records: "love_records", todos: "love_todos", photos: "love_photos" };
 const storageBucket = "love-photos";
-const todoPageSize = 5;
+const todoPageSize = 10;
 const loveStartDate = "2025-09-06";
 const milestoneDays = [300, 365, 520, 666, 999, 1314];
 
@@ -334,24 +334,22 @@ function renderAll() {
 
 // ========== Anniversary ==========
 function renderAnniversary() {
-  if (!countdownEl || !daysLeftEl) return;
+  var daysEl = document.querySelector("#love-days");
+  var milestoneList = document.querySelector("#milestone-list");
+  var startLabel = document.querySelector("#love-start-date");
+  if (!daysEl || !milestoneList) return;
   var start = new Date(loveStartDate).getTime();
   var now = Date.now();
   var days = Math.max(0, Math.floor((now - start) / (1000 * 60 * 60 * 24)));
-  daysLeftEl.textContent = String(days);
+  daysEl.textContent = String(days);
+  if (startLabel) startLabel.textContent = "从 " + loveStartDate + " 开始";
 
-  var nextContainer = document.querySelector("#next-milestones");
-  if (!nextContainer) return;
   var html = "";
   milestoneDays.forEach(function(target) {
     var diff = target - days;
-    if (diff > 0) {
-      html += '<div class="feature-item"><strong>' + target + ' 天</strong><span>还有 ' + diff + ' 天</span></div>';
-    } else {
-      html += '<div class="feature-item done"><strong>' + target + ' 天</strong><span>已完成 ✓</span></div>';
-    }
+    html += '<article class="milestone-item' + (diff <= 0 ? ' is-done' : '') + '"><div><h3>' + target + ' 天</h3><p>' + (diff > 0 ? '还有 ' + diff + ' 天' : '已经一起走过') + '</p></div><span>' + (diff > 0 ? '倒计时' : '已达成') + '</span></article>';
   });
-  nextContainer.innerHTML = html || "<p>全部里程碑已完成 🎉</p>";
+  milestoneList.innerHTML = html;
 }
 
 // ========== Render Plans ==========
@@ -392,26 +390,23 @@ function renderTodos() {
   if (!list) return;
   var total = state.todos.length;
   var max = todoPageSize;
-  var todos = state.todos.slice(0, state.todoPage * max);
+  var pageCount = Math.max(1, Math.ceil(total / max));
+  state.todoPage = Math.min(Math.max(1, state.todoPage), pageCount);
+  var start = (state.todoPage - 1) * max;
+  var todos = state.todos.slice(start, start + max);
   if (!todos.length) {
     list.innerHTML = '<p>还没有想做的事。</p><span>从上面的输入框开始添加。</span>';
     return;
   }
   list.innerHTML = todos.map(function(t, i) {
     return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span>' + escapeHtml(t.text) +
-      '</span><button data-toggle-todo="' + i + '">' + (t.done ? '↩' : '✓') + '</button></div>';
+      '</span><button data-toggle-todo="' + (start + i) + '">' + (t.done ? '↩' : '✓') + '</button></div>';
   }).join("");
-  if (total > state.todoPage * max) {
-    list.innerHTML += '<button class="load-more" id="load-more-todos">加载更多（' +
-      (total - state.todoPage * max) + ' 条）</button>';
-  }
+  if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';
   list.querySelectorAll("[data-toggle-todo]").forEach(function(btn) {
     btn.addEventListener("click", function() { toggleTodo(parseInt(btn.dataset.toggleTodo)); });
   });
-  var loadMore = list.querySelector("#load-more-todos");
-  if (loadMore) {
-    loadMore.addEventListener("click", function() { state.todoPage++; renderTodos(); });
-  }
+  list.querySelectorAll("[data-todo-page]").forEach(function(btn) { btn.addEventListener("click", function() { state.todoPage = parseInt(btn.dataset.todoPage); renderTodos(); }); });
 }
 
 // ========== Render Photos ==========
@@ -499,13 +494,13 @@ function normalizePlanSegments(plan) {
 
 // ========== China Map (AMap) ==========
 function renderChinaMap(container, overlay, plans, visitedCities) {
-  if (!window.CHINA_COUNTIES_GEOJSON || !window.CHINA_COUNTIES_GEOJSON.features) {
-    container.innerHTML = '<div class="map-fallback"><strong>县级地图数据没有加载</strong><span>请确认 china-counties-data.js 位于当前文件夹。</span></div>';
+  if (!window.CHINA_CITIES_GEOJSON || !window.CHINA_CITIES_GEOJSON.features) {
+    container.innerHTML = '<div class="map-fallback"><strong>市级地图数据没有加载</strong><span>请确认 china-cities-data.js 位于当前文件夹。</span></div>';
     return;
   }
   if (!mapGeometry) mapGeometry = buildMapGeometry();
   if (!mapGeometry) return;
-  container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.counties + mapGeometry.provinces + mapGeometry.labels + routeSvg(plans, visitedCities) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
+  container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + routeSvg(plans, visitedCities) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
   chinaMap = container.querySelector(".china-svg");
   bindMapInteractions(container);
   applyMapView();
@@ -513,7 +508,7 @@ function renderChinaMap(container, overlay, plans, visitedCities) {
 }
 
 function buildMapGeometry() {
-  var counties = window.CHINA_COUNTIES_GEOJSON.features;
+  var cities = window.CHINA_CITIES_GEOJSON.features;
   var provinces = (window.CHINA_PROVINCES_GEOJSON && window.CHINA_PROVINCES_GEOJSON.features) || [];
   var minLon = 73, maxLon = 136, minLat = 17, maxLat = 55, padding = 38;
   function project(point) {
@@ -527,12 +522,10 @@ function buildMapGeometry() {
     var polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
     return polygons.map(function(poly) { return poly.map(function(ring) { return ring.map(function(p, i) { var q = project(p); return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('') + 'Z'; }).join(''); }).join('');
   }
-  function labelFor(feature) { var c = getFeatureCentroid(feature), p = project(c); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
   return {
     project: project,
-    counties: '<g class="county-layer">' + counties.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
-    provinces: '<g class="province-layer">' + provinces.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
-    labels: '<g class="province-labels">' + provinces.map(labelFor).join('') + '</g>'
+    cities: '<g class="city-layer">' + cities.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
+    provinces: '<g class="province-layer">' + provinces.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>'
   };
 }
 
