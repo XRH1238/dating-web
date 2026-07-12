@@ -52,6 +52,7 @@ const panelLabel = document.querySelector("#panel-label");
 const planFields = document.querySelector("#plan-fields");
 const todoForm = document.querySelector("#todo-form");
 const photoInput = document.querySelector("#photo-input");
+const photoCityInput = document.querySelector("#photo-city");
 const cloudStatus = document.querySelector("#cloud-status");
 let activeType = "plan";
 let cloudStatusTimer;
@@ -226,7 +227,7 @@ function setCloudStatus(status) {
 async function loadRemoteData() {
   if (!state.backendReady) return;
   setCloudStatus("loading");
-  await Promise.all([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
+  await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
   renderAll();
   setCloudStatus("connected");
 }
@@ -304,11 +305,13 @@ async function fetchPhotos() {
 }
 async function uploadPhotos(files) {
   if (!files || !files.length) return;
+  var city = photoCityInput ? photoCityInput.value.trim() : "";
   for (var i = 0; i < files.length; i++) {
     var file = files[i];
     var entry = { name: file.name, created_at: new Date().toISOString() };
     if (state.backendReady) {
-      var path = Date.now() + "-" + file.name;
+      var folder = city && cityCoordinates[city] ? city : "unplaced";
+      var path = folder + "/" + Date.now() + "-" + file.name;
       await state.client.storage.from(storageBucket).upload(path, file);
       var url = state.client.storage.from(storageBucket).getPublicUrl(path).data.publicUrl;
       entry.path = path;
@@ -319,6 +322,7 @@ async function uploadPhotos(files) {
     }
     state.photos.unshift(entry);
   }
+  if (photoCityInput) photoCityInput.value = "";
   renderAll();
 }
 
@@ -457,14 +461,20 @@ function renderFootprintMap() {
     });
   });
 
-  renderChinaMap(mapEl, overlay, mappedPlans, Array.from(visited.values()));
+  var mapPhotos = state.photos.map(function(photo) {
+    var city = getPhotoCity(photo);
+    return city && cityCoordinates[city] ? { city: city, url: photo.url, date: photo.created_at } : null;
+  }).filter(Boolean);
+  renderChinaMap(mapEl, overlay, mappedPlans, Array.from(visited.values()), mapPhotos);
 
   if (!state.plans.length) {
     legend.innerHTML = "<p>添加出游计划后，中国地图会显示你们的路线。</p>";
     return;
   }
   legend.innerHTML = '<div class="map-legend-count"><strong>' + visited.size +
-    '</strong><span>个已标记城市</span></div><div class="map-route-list">' +
+    '</strong><span>个已标记城市</span></div>' +
+    (mapPhotos.length ? '<p class="map-photo-count">已挂上 ' + mapPhotos.length + ' 张城市照片</p>' : (state.photos.length ? '<p class="map-note">照片上传时填写拍摄城市，即可挂到地图上。</p>' : '')) +
+    '<div class="map-route-list">' +
     mappedPlans.map(function(p) {
       return '<article><span><b>' + p.segments.length + '</b>' + escapeHtml(p.title || "出游路线") +
         '</span><p>' + p.segments.map(function(s) {
@@ -493,14 +503,14 @@ function normalizePlanSegments(plan) {
 }
 
 // ========== China Map (AMap) ==========
-function renderChinaMap(container, overlay, plans, visitedCities) {
+function renderChinaMap(container, overlay, plans, visitedCities, mapPhotos) {
   if (!window.CHINA_CITIES_GEOJSON || !window.CHINA_CITIES_GEOJSON.features) {
     container.innerHTML = '<div class="map-fallback"><strong>市级地图数据没有加载</strong><span>请确认 china-cities-data.js 位于当前文件夹。</span></div>';
     return;
   }
   if (!mapGeometry) mapGeometry = buildMapGeometry();
   if (!mapGeometry) return;
-  container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + routeSvg(plans, visitedCities) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
+  container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + mapGeometry.provinceLabels + mapGeometry.cityLabels + routeSvg(plans, visitedCities, mapPhotos || []) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
   chinaMap = container.querySelector(".china-svg");
   bindMapInteractions(container);
   applyMapView();
@@ -522,14 +532,24 @@ function buildMapGeometry() {
     var polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
     return polygons.map(function(poly) { return poly.map(function(ring) { return ring.map(function(p, i) { var q = project(p); return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('') + 'Z'; }).join(''); }).join('');
   }
+  function centerFor(feature) {
+    var polygons = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+    var ring = polygons[0][0], x = 0, y = 0, count = 0;
+    for (var i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 24))) { x += ring[i][0]; y += ring[i][1]; count++; }
+    return project([x / count, y / count]);
+  }
+  function provinceLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
+  function cityLabel(name) { var p = project(cityCoordinates[name]); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(name) + '</text>'; }
   return {
     project: project,
     cities: '<g class="city-layer">' + cities.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
-    provinces: '<g class="province-layer">' + provinces.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>'
+    provinces: '<g class="province-layer">' + provinces.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
+    provinceLabels: '<g class="province-labels">' + provinces.map(provinceLabel).join('') + '</g>',
+    cityLabels: '<g class="city-labels">' + Object.keys(cityCoordinates).map(cityLabel).join('') + '</g>'
   };
 }
 
-function routeSvg(plans, visitedCities) {
+function routeSvg(plans, visitedCities, mapPhotos) {
   var colors = ['#d95f78', '#528270', '#ca854a', '#587fa8'];
   var routes = plans.map(function(plan, planIndex) { return plan.segments.map(function(seg, segmentIndex) {
     var a = mapGeometry.project(seg.start), b = mapGeometry.project(seg.end), color = colors[planIndex % colors.length];
@@ -538,7 +558,15 @@ function routeSvg(plans, visitedCities) {
     return '<g class="route-group" style="--route-color:' + color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + transportIcon(seg.transport) + '</g></g>';
   }).join(''); }).join('');
   var cities = visitedCities.map(function(city) { var p = mapGeometry.project(city.coordinates); return '<g class="city-marker" transform="translate(' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')"><circle r="7"/><circle class="city-core" r="2.6"/><text x="11" y="-10">' + escapeHtml(city.name) + '</text></g>'; }).join('');
-  return '<g class="route-layer">' + routes + cities + '</g>';
+  var photoPins = mapPhotos.map(function(photo, index) { var p = mapGeometry.project(cityCoordinates[photo.city]), shift = (index % 3) * 13; return '<g class="photo-pin" transform="translate(' + (p[0] - 25 + shift).toFixed(1) + ' ' + (p[1] - 72 - shift).toFixed(1) + ')" filter="url(#route-shadow)"><rect width="50" height="62" rx="5"/><image href="' + escapeHtml(photo.url || '') + '" x="5" y="5" width="40" height="39" preserveAspectRatio="xMidYMid slice"/><text x="25" y="56">' + escapeHtml(String(photo.date || '').slice(5, 10).replace('-', '.')) + '</text></g>'; }).join('');
+  return '<g class="route-layer">' + routes + cities + photoPins + '</g>';
+}
+
+function getPhotoCity(photo) {
+  if (!photo) return '';
+  if (photo.city) return String(photo.city).trim();
+  var path = String(photo.path || '');
+  return path.indexOf('/') > 0 ? path.split('/')[0] : '';
 }
 
 function bindMapInteractions(container) {

@@ -435,7 +435,7 @@ p {
     inset 0 0 60px rgba(35, 71, 62, 0.12),
     0 18px 42px rgba(88, 42, 58, 0.1);
   z-index: 1;
-  background: #dceee8;
+  background: #f7dce3;
 }
 
 .china-svg {
@@ -452,7 +452,7 @@ p {
 }
 
 .map-water {
-  fill: #dceee8;
+  fill: #f7dce3;
 }
 
 .map-content {
@@ -460,27 +460,47 @@ p {
 }
 
 .city-layer path {
-  fill: #fcfaf5;
-  stroke: rgba(119, 108, 99, 0.42);
+  fill: #fff9f7;
+  stroke: rgba(151, 92, 112, 0.3);
   stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
 }
 
 .province-layer path {
   fill: none;
-  stroke: rgba(90, 76, 68, 0.64);
-  stroke-width: 1.45;
+  stroke: rgba(174, 76, 112, 0.7);
+  stroke-width: 1.65;
   vector-effect: non-scaling-stroke;
 }
 
 .province-labels text {
-  fill: #355e50;
-  font-size: 17px;
+  fill: #9f334e;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: 0;
   paint-order: stroke;
   stroke: rgba(255, 255, 255, 0.9);
   stroke-width: 4px;
+  stroke-linejoin: round;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.city-labels {
+  display: none;
+}
+
+.china-svg.is-zoomed .city-labels {
+  display: block;
+}
+
+.city-labels text {
+  fill: #805064;
+  font-size: 12px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(255, 249, 247, 0.96);
+  stroke-width: 3px;
   stroke-linejoin: round;
   text-anchor: middle;
   pointer-events: none;
@@ -630,6 +650,13 @@ p {
   font-size: 13px;
 }
 
+.map-photo-count {
+  margin: -4px 0 2px;
+  color: #9f334e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .map-route-list {
   display: grid;
   gap: 8px;
@@ -740,6 +767,23 @@ p {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.photo-pin rect {
+  fill: #fffdfb;
+  stroke: rgba(159, 51, 78, 0.28);
+  stroke-width: 1.4;
+}
+
+.photo-pin image {
+  clip-path: inset(0 round 3px);
+}
+
+.photo-pin text {
+  fill: #8f5c6c;
+  font-size: 8px;
+  font-weight: 800;
+  text-anchor: middle;
 }
 
 .milestone-item {
@@ -1075,6 +1119,23 @@ p {
   cursor: pointer;
 }
 
+.gallery-actions {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.photo-city-field {
+  gap: 5px;
+  min-width: 150px;
+  font-size: 12px;
+}
+
+.photo-city-field input {
+  min-height: 44px;
+  padding: 9px 11px;
+}
+
 .upload-button input {
   position: absolute;
   width: 1px;
@@ -1299,6 +1360,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .gallery-actions {
+    width: 100%;
+  }
+
   .milestone-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1333,6 +1398,15 @@ textarea {
 
   .route-segment-row {
     grid-template-columns: 1fr;
+  }
+
+  .gallery-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .photo-city-field {
+    width: 100%;
   }
 
   .milestone-list {
