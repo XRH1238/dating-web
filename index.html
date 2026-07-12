@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -43,7 +43,7 @@
             <a class="button secondary" href="#todo">写下想做的事</a>
           </div>
         </div>
-        <aside class="next-trip-card" aria-label="下一次出游">
+        <a class="next-trip-card" href="#plans" aria-label="查看下一次出游计划">
           <span class="card-kicker">下一次出游</span>
           <strong>还没有填写</strong>
           <span class="trip-date">在出游计划里写下第一站</span>
@@ -51,7 +51,7 @@
             <span>--</span>
             <small>等待出发</small>
           </div>
-        </aside>
+        </a>
       </section>
 
       <section class="section intro-grid" aria-label="网站功能概览">
@@ -60,26 +60,31 @@
           <h2>先留出位置，等你们一点点填满。</h2>
         </div>
         <div class="feature-grid">
-          <article class="feature-item">
+          <a class="feature-item" href="#anniversary">
             <span class="feature-icon">01</span>
-            <h3>计划</h3>
-            <p>填写目的地、时间和出发前要准备的事。</p>
-          </article>
-          <article class="feature-item">
-            <span class="feature-icon">02</span>
-            <h3>记录</h3>
-            <p>写下旅行当天的小故事、路线和心情。</p>
-          </article>
-          <article class="feature-item">
-            <span class="feature-icon">03</span>
             <h3>纪念日</h3>
             <p>自动计算在一起的天数，提前看到下一次值得庆祝的日子。</p>
-          </article>
-          <article class="feature-item">
+          </a>
+          <a class="feature-item" href="#plans">
+            <span class="feature-icon">02</span>
+            <h3>计划</h3>
+            <p>填写目的地、时间和出发前要准备的事。</p>
+          </a>
+          <a class="feature-item" href="#records">
+            <span class="feature-icon">03</span>
+            <h3>记录</h3>
+            <p>写下旅行当天的小故事、路线和心情。</p>
+          </a>
+          <a class="feature-item" href="#todo">
             <span class="feature-icon">04</span>
+            <h3>想做的事</h3>
+            <p>记录想一起完成的小事，每一页都慢慢填满。</p>
+          </a>
+          <a class="feature-item" href="#gallery">
+            <span class="feature-icon">05</span>
             <h3>照片</h3>
             <p>上传本地照片，先在页面里预览你们的相册。</p>
-          </article>
+          </a>
         </div>
       </section>
 
@@ -116,6 +121,19 @@
             <h2>出游计划</h2>
           </div>
           <button class="ghost-button" type="button" data-open-panel="plan">添加计划</button>
+        </div>
+          <div class="map-board">
+          <div>
+            <span class="section-label">China Footprint</span>
+            <h3>我们的中国旅行地图</h3>
+            <p class="muted">可拖拽、缩放。县级边界会随视图放大显现，每一段路线都按交通方式显示独立图标。</p>
+          </div>
+          <div class="map-shell">
+            <div id="footprint-map" class="china-map" role="img" aria-label="中国旅行足迹地图">
+              <div class="map-overlay" id="map-overlay" aria-hidden="true"></div>
+            </div>
+            <div class="map-legend" id="map-legend"></div>
+          </div>
         </div>
         <div class="empty-state" id="plan-list">
           <p>还没有出游计划。</p>
@@ -191,6 +209,15 @@
             日期
             <input name="date" type="text" placeholder="例如：2026.08.18" required />
           </label>
+          <div class="plan-fields" id="plan-fields">
+            <div class="route-editor">
+              <div class="route-editor-heading">
+                <span>路线分段</span>
+                <button type="button" class="route-add-button" id="add-route-segment">添加一段</button>
+              </div>
+              <div class="route-segments" id="route-segments"></div>
+            </div>
+          </div>
           <label>
             简短描述
             <textarea name="description" rows="4" placeholder="写下最想记住的安排或回忆" required></textarea>
@@ -205,6 +232,8 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="china-counties-data.js"></script>
+    <script src="china-provinces-data.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

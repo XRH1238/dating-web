@@ -7,6 +7,11 @@ create table if not exists public.love_plans (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   date text not null,
+  origin text,
+  destination text,
+  transport text,
+  transfers text,
+  segments jsonb,
   description text not null,
   created_at timestamptz not null default now()
 );
@@ -38,6 +43,12 @@ alter table public.love_plans enable row level security;
 alter table public.love_records enable row level security;
 alter table public.love_todos enable row level security;
 alter table public.love_photos enable row level security;
+
+alter table public.love_plans add column if not exists origin text;
+alter table public.love_plans add column if not exists destination text;
+alter table public.love_plans add column if not exists transport text;
+alter table public.love_plans add column if not exists transfers text;
+alter table public.love_plans add column if not exists segments jsonb;
 
 create policy "public read plans" on public.love_plans for select using (true);
 create policy "public insert plans" on public.love_plans for insert with check (true);
