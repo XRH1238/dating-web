@@ -62,6 +62,7 @@ let chinaMap = null;
 let mapView = { scale: 1, x: 0, y: 0 };
 let mapDrag = null;
 let mapGeometry = null;
+let mapFrame = 0;
 
 // ========== WGS-84 to GCJ-02 ==========
 function wgs84ToGcj02(lng, lat) {
@@ -533,19 +534,34 @@ function buildMapGeometry() {
     return polygons.map(function(poly) { return poly.map(function(ring) { return ring.map(function(p, i) { var q = project(p); return (i ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('') + 'Z'; }).join(''); }).join('');
   }
   function centerFor(feature) {
-    var polygons = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
-    var ring = polygons[0][0], x = 0, y = 0, count = 0;
-    for (var i = 0; i < ring.length; i += Math.max(1, Math.floor(ring.length / 24))) { x += ring[i][0]; y += ring[i][1]; count++; }
-    return project([x / count, y / count]);
+    var geometry = feature.geometry;
+    if (geometry.type === 'MultiLineString') {
+      var line = geometry.coordinates[0], lx = 0, ly = 0;
+      line.forEach(function(point) { lx += point[0]; ly += point[1]; });
+      return project([lx / line.length, ly / line.length]);
+    }
+    var polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+    var largestRing = null, largestArea = -1;
+    polygons.forEach(function(polygon) { polygon.forEach(function(ring) {
+      var area = 0;
+      for (var i = 0; i < ring.length - 1; i++) area += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+      if (Math.abs(area) > largestArea) { largestArea = Math.abs(area); largestRing = ring; }
+    }); });
+    var cross = 0, x = 0, y = 0;
+    for (var j = 0; j < largestRing.length - 1; j++) {
+      var a = largestRing[j], b = largestRing[j + 1], factor = a[0] * b[1] - b[0] * a[1];
+      cross += factor; x += (a[0] + b[0]) * factor; y += (a[1] + b[1]) * factor;
+    }
+    return project(cross ? [x / (3 * cross), y / (3 * cross)] : largestRing[0]);
   }
   function provinceLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
-  function cityLabel(name) { var p = project(cityCoordinates[name]); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(name) + '</text>'; }
+  function cityLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
   return {
     project: project,
     cities: '<g class="city-layer">' + cities.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
     provinces: '<g class="province-layer">' + provinces.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
     provinceLabels: '<g class="province-labels">' + provinces.map(provinceLabel).join('') + '</g>',
-    cityLabels: '<g class="city-labels">' + Object.keys(cityCoordinates).map(cityLabel).join('') + '</g>'
+    cityLabels: '<g class="city-labels">' + cities.map(cityLabel).join('') + '</g>'
   };
 }
 
@@ -574,15 +590,20 @@ function bindMapInteractions(container) {
   container.querySelectorAll('[data-map-action]').forEach(function(button) { button.addEventListener('click', function() {
     var action = button.dataset.mapAction;
     if (action === 'reset') mapView = { scale: 1, x: 0, y: 0 };
-    if (action === 'zoom-in') mapView.scale = Math.min(5, mapView.scale * 1.35);
-    if (action === 'zoom-out') mapView.scale = Math.max(1, mapView.scale / 1.35);
-    applyMapView();
+    if (action === 'zoom-in') mapView.scale = Math.min(12, mapView.scale * 1.3);
+    if (action === 'zoom-out') mapView.scale = Math.max(1, mapView.scale / 1.3);
+    scheduleMapView();
   }); });
-  svg.addEventListener('wheel', function(event) { event.preventDefault(); mapView.scale = Math.max(1, Math.min(5, mapView.scale * (event.deltaY < 0 ? 1.16 : 1 / 1.16))); applyMapView(); }, { passive: false });
+  svg.addEventListener('wheel', function(event) { event.preventDefault(); mapView.scale = Math.max(1, Math.min(12, mapView.scale * (event.deltaY < 0 ? 1.14 : 1 / 1.14))); scheduleMapView(); }, { passive: false });
   svg.addEventListener('pointerdown', function(event) { mapDrag = { x: event.clientX, y: event.clientY, startX: mapView.x, startY: mapView.y }; svg.setPointerCapture(event.pointerId); });
-  svg.addEventListener('pointermove', function(event) { if (!mapDrag) return; mapView.x = mapDrag.startX + event.clientX - mapDrag.x; mapView.y = mapDrag.startY + event.clientY - mapDrag.y; applyMapView(); });
+  svg.addEventListener('pointermove', function(event) { if (!mapDrag) return; mapView.x = mapDrag.startX + event.clientX - mapDrag.x; mapView.y = mapDrag.startY + event.clientY - mapDrag.y; scheduleMapView(); });
   svg.addEventListener('pointerup', function() { mapDrag = null; });
   svg.addEventListener('pointercancel', function() { mapDrag = null; });
+}
+
+function scheduleMapView() {
+  if (mapFrame) return;
+  mapFrame = requestAnimationFrame(function() { mapFrame = 0; applyMapView(); });
 }
 
 function applyMapView() {
@@ -590,6 +611,7 @@ function applyMapView() {
   var content = chinaMap.querySelector('.map-content');
   if (content) content.setAttribute('transform', 'translate(' + mapView.x.toFixed(1) + ' ' + mapView.y.toFixed(1) + ') translate(500 360) scale(' + mapView.scale.toFixed(3) + ') translate(-500 -360)');
   chinaMap.classList.toggle('is-zoomed', mapView.scale > 1.35);
+  chinaMap.classList.toggle('is-city-detail', mapView.scale >= 3);
 }
 
 function initChinaMap(container) {

@@ -457,6 +457,7 @@ p {
 
 .map-content {
   transform-origin: center;
+  will-change: transform;
 }
 
 .city-layer path {
@@ -490,13 +491,17 @@ p {
   display: none;
 }
 
-.china-svg.is-zoomed .city-labels {
+.china-svg.is-city-detail .city-labels {
   display: block;
+}
+
+.china-svg.is-city-detail .province-labels {
+  display: none;
 }
 
 .city-labels text {
   fill: #805064;
-  font-size: 12px;
+  font-size: 8px;
   font-weight: 700;
   paint-order: stroke;
   stroke: rgba(255, 249, 247, 0.96);
