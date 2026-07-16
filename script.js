@@ -108,6 +108,7 @@ function getFeatureCentroid(feature) {
 
 // ========== Init ==========
 document.addEventListener("DOMContentLoaded", init);
+window.addEventListener("resize", scheduleMapView);
 
 async function init() {
   bindEvents();
@@ -664,7 +665,7 @@ function updateCityLabelLayout() {
     compact: width < 640
   });
   mapCityLabels.forEach(function(label, index) {
-    label.hidden = !visible.has(label.dataset.labelIndex || String(index));
+    label.style.display = visible.has(label.dataset.labelIndex || String(index)) ? '' : 'none';
   });
   var group = chinaMap.querySelector('.city-labels');
   if (group) {

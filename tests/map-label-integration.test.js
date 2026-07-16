@@ -27,8 +27,12 @@ test('地图变换后调用碰撞布局并规范化重点城市名称', () => {
   assert.match(script, /updateCityLabelLayout\(\);/);
 });
 
-test('标签样式支持反向缩放和隐藏状态', () => {
+test('标签样式支持反向缩放并使用 SVG 可见样式控制', () => {
   assert.match(styles, /--city-label-font-size/);
   assert.match(styles, /--city-label-stroke-width/);
-  assert.match(styles, /\.city-labels text\[hidden\]/);
+  assert.match(script, /label\.style\.display\s*=/);
+});
+
+test('窗口尺寸变化时重新计算标签布局', () => {
+  assert.match(script, /window\.addEventListener\(['"]resize['"],\s*scheduleMapView\)/);
 });

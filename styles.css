@@ -511,10 +511,6 @@ p {
   pointer-events: none;
 }
 
-.city-labels text[hidden] {
-  display: none;
-}
-
 .route-line {
   fill: none;
   stroke: var(--route-color);
