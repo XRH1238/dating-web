@@ -63,6 +63,8 @@ let mapView = { scale: 1, x: 0, y: 0 };
 let mapDrag = null;
 let mapGeometry = null;
 let mapFrame = 0;
+let mapPriorityCities = new Set();
+let mapCityLabels = [];
 
 // ========== WGS-84 to GCJ-02 ==========
 function wgs84ToGcj02(lng, lat) {
@@ -511,8 +513,22 @@ function renderChinaMap(container, overlay, plans, visitedCities, mapPhotos) {
   }
   if (!mapGeometry) mapGeometry = buildMapGeometry();
   if (!mapGeometry) return;
+  mapPriorityCities = new Set();
+  plans.forEach(function(plan) {
+    plan.segments.forEach(function(segment) {
+      if (segment.from) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(segment.from));
+      if (segment.to) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(segment.to));
+    });
+  });
+  visitedCities.forEach(function(city) {
+    if (city.name) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(city.name));
+  });
+  (mapPhotos || []).forEach(function(photo) {
+    if (photo.city) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(photo.city));
+  });
   container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + mapGeometry.provinceLabels + mapGeometry.cityLabels + routeSvg(plans, visitedCities, mapPhotos || []) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
   chinaMap = container.querySelector(".china-svg");
+  mapCityLabels = Array.from(chinaMap.querySelectorAll('.city-labels text'));
   bindMapInteractions(container);
   applyMapView();
   if (overlay) overlay.innerHTML = '';
@@ -555,7 +571,10 @@ function buildMapGeometry() {
     return project(cross ? [x / (3 * cross), y / (3 * cross)] : largestRing[0]);
   }
   function provinceLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
-  function cityLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
+  function cityLabel(feature, index) {
+    var p = centerFor(feature), name = feature.properties.name || '';
+    return '<text data-city="' + escapeHtml(name) + '" data-label-index="' + index + '" x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(name) + '</text>';
+  }
   return {
     project: project,
     cities: '<g class="city-layer">' + cities.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
@@ -612,6 +631,46 @@ function applyMapView() {
   if (content) content.setAttribute('transform', 'translate(' + mapView.x.toFixed(1) + ' ' + mapView.y.toFixed(1) + ') translate(500 360) scale(' + mapView.scale.toFixed(3) + ') translate(-500 -360)');
   chinaMap.classList.toggle('is-zoomed', mapView.scale > 1.35);
   chinaMap.classList.toggle('is-city-detail', mapView.scale >= 3);
+  updateCityLabelLayout();
+}
+
+function updateCityLabelLayout() {
+  if (!chinaMap || !window.MapLabelLayout) return;
+  var width = chinaMap.clientWidth || 1000;
+  var height = chinaMap.clientHeight || 720;
+  var renderScale = Math.min(width / 1000, height / 720);
+  var offsetX = (width - 1000 * renderScale) / 2;
+  var offsetY = (height - 720 * renderScale) / 2;
+  var candidates = mapCityLabels.map(function(label, index) {
+    var name = label.dataset.city || '';
+    return {
+      id: label.dataset.labelIndex || String(index),
+      name: name,
+      x: Number(label.getAttribute('x')),
+      y: Number(label.getAttribute('y')),
+      priority: mapPriorityCities.has(window.MapLabelLayout.canonicalCityName(name)),
+      index: Number(label.dataset.labelIndex || index)
+    };
+  });
+  var visible = window.MapLabelLayout.layoutCityLabels(candidates, {
+    scale: mapView.scale,
+    x: mapView.x,
+    y: mapView.y,
+    width: width,
+    height: height,
+    renderScale: renderScale,
+    offsetX: offsetX,
+    offsetY: offsetY,
+    compact: width < 640
+  });
+  mapCityLabels.forEach(function(label, index) {
+    label.hidden = !visible.has(label.dataset.labelIndex || String(index));
+  });
+  var group = chinaMap.querySelector('.city-labels');
+  if (group) {
+    group.style.setProperty('--city-label-font-size', (12 / (mapView.scale * renderScale)).toFixed(3) + 'px');
+    group.style.setProperty('--city-label-stroke-width', (3 / (mapView.scale * renderScale)).toFixed(3) + 'px');
+  }
 }
 
 function initChinaMap(container) {

@@ -19,14 +19,17 @@
     var fontSize = 12;
     var gap = view.scale < 6 ? 8 : view.scale < 9 ? 5 : 3;
     if (view.compact) gap += 6;
+    var renderScale = Number(view.renderScale) || 1;
+    var offsetX = Number(view.offsetX) || 0;
+    var offsetY = Number(view.offsetY) || 0;
     var occupied = [];
     var ordered = labels.slice().sort(function(a, b) {
       return Number(b.priority) - Number(a.priority) || a.index - b.index;
     });
 
     ordered.forEach(function(label) {
-      var screenX = view.x + 500 + (label.x - 500) * view.scale;
-      var screenY = view.y + 360 + (label.y - 360) * view.scale;
+      var screenX = offsetX + (view.x + 500 + (label.x - 500) * view.scale) * renderScale;
+      var screenY = offsetY + (view.y + 360 + (label.y - 360) * view.scale) * renderScale;
       var width = Math.max(fontSize * 2, String(label.name).length * fontSize);
       var height = fontSize * 1.35;
       var rect = {
@@ -39,7 +42,7 @@
       if (rect.right < 0 || rect.left > view.width || rect.bottom < 0 || rect.top > view.height) return;
       if (occupied.some(function(item) { return intersects(rect, item); })) return;
       occupied.push(rect);
-      visible.add(label.name);
+      visible.add(label.id || label.name);
     });
 
     return visible;

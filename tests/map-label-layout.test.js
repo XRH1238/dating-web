@@ -64,3 +64,25 @@ test('重点城市名称忽略常见行政区后缀', () => {
   assert.equal(canonicalCityName('厦门市'), canonicalCityName('厦门'));
   assert.equal(canonicalCityName('阿坝藏族羌族自治州'), canonicalCityName('阿坝藏族羌族自治'));
 });
+
+test('同名但位置不同的标签使用稳定标识分别控制', () => {
+  const visible = layoutCityLabels([
+    { id: 'city-1', name: '境界', x: 450, y: 360, priority: false, index: 0 },
+    { id: 'city-2', name: '境界', x: 550, y: 360, priority: false, index: 1 }
+  ], baseView);
+  assert.deepEqual([...visible], ['city-1', 'city-2']);
+});
+
+test('碰撞检测使用 SVG 实际渲染比例', () => {
+  const labels = [
+    { name: '甲城市', x: 480, y: 360, priority: false, index: 0 },
+    { name: '乙城市', x: 500, y: 360, priority: false, index: 1 }
+  ];
+  assert.equal(layoutCityLabels(labels, baseView).size, 2);
+  assert.equal(layoutCityLabels(labels, {
+    ...baseView,
+    width: 500,
+    height: 360,
+    renderScale: 0.5
+  }).size, 1);
+});

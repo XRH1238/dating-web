@@ -501,14 +501,18 @@ p {
 
 .city-labels text {
   fill: #805064;
-  font-size: 8px;
+  font-size: var(--city-label-font-size, 4px);
   font-weight: 700;
   paint-order: stroke;
   stroke: rgba(255, 249, 247, 0.96);
-  stroke-width: 3px;
+  stroke-width: var(--city-label-stroke-width, 1px);
   stroke-linejoin: round;
   text-anchor: middle;
   pointer-events: none;
+}
+
+.city-labels text[hidden] {
+  display: none;
 }
 
 .route-line {
