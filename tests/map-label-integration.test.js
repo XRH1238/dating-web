@@ -36,3 +36,7 @@ test('标签样式支持反向缩放并使用 SVG 可见样式控制', () => {
 test('窗口尺寸变化时重新计算标签布局', () => {
   assert.match(script, /window\.addEventListener\(['"]resize['"],\s*scheduleMapView\)/);
 });
+
+test('应用地图变换前限制平移边界', () => {
+  assert.match(script, /MapLabelLayout\.clampMapTranslation\(mapView\)/);
+});

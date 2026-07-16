@@ -12,6 +12,18 @@
       a.top < b.bottom && a.bottom > b.top;
   }
 
+  function clampMapTranslation(view) {
+    var scale = Math.max(1, Number(view && view.scale) || 1);
+    var maxX = 500 * (scale - 1);
+    var maxY = 360 * (scale - 1);
+    var x = Number(view && view.x) || 0;
+    var y = Number(view && view.y) || 0;
+    return {
+      x: maxX ? Math.max(-maxX, Math.min(maxX, x)) : 0,
+      y: maxY ? Math.max(-maxY, Math.min(maxY, y)) : 0
+    };
+  }
+
   function layoutCityLabels(labels, view) {
     var visible = new Set();
     if (!view || view.scale < 3) return visible;
@@ -50,6 +62,7 @@
 
   return {
     canonicalCityName: canonicalCityName,
+    clampMapTranslation: clampMapTranslation,
     layoutCityLabels: layoutCityLabels
   };
 });

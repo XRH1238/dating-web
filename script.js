@@ -628,6 +628,9 @@ function scheduleMapView() {
 
 function applyMapView() {
   if (!chinaMap) return;
+  var clampedView = window.MapLabelLayout.clampMapTranslation(mapView);
+  mapView.x = clampedView.x;
+  mapView.y = clampedView.y;
   var content = chinaMap.querySelector('.map-content');
   if (content) content.setAttribute('transform', 'translate(' + mapView.x.toFixed(1) + ' ' + mapView.y.toFixed(1) + ') translate(500 360) scale(' + mapView.scale.toFixed(3) + ') translate(-500 -360)');
   chinaMap.classList.toggle('is-zoomed', mapView.scale > 1.35);

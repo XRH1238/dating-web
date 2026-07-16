@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { canonicalCityName, layoutCityLabels } = require('../map-label-layout.js');
+const { canonicalCityName, clampMapTranslation, layoutCityLabels } = require('../map-label-layout.js');
 
 const baseView = { scale: 3, x: 0, y: 0, width: 1000, height: 720 };
 
@@ -85,4 +85,15 @@ test('碰撞检测使用 SVG 实际渲染比例', () => {
     height: 360,
     renderScale: 0.5
   }).size, 1);
+});
+
+test('极端拖动会被限制在地图视口边界内', () => {
+  assert.deepEqual(
+    clampMapTranslation({ scale: 3, x: 2914, y: 2479 }),
+    { x: 1000, y: 720 }
+  );
+  assert.deepEqual(
+    clampMapTranslation({ scale: 1, x: -400, y: 300 }),
+    { x: 0, y: 0 }
+  );
 });
