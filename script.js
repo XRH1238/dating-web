@@ -486,6 +486,7 @@ function renderFootprintMap() {
   var mapEl = document.querySelector("#footprint-map");
   var overlay = document.querySelector("#map-overlay");
   var legend = document.querySelector("#map-legend");
+  renderTransportIconGuide();
   if (!mapEl || !legend) return;
 
   var mappedPlans = state.plans.map(function(p) {
@@ -644,7 +645,7 @@ function routeSvg(plans, visitedCities, mapPhotos) {
     var visual = transportVisual(seg.transport);
     var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - Math.min(58, Math.abs(a[0] - b[0]) * .13);
     var path = 'M' + a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' Q' + mx.toFixed(1) + ',' + my.toFixed(1) + ' ' + b[0].toFixed(1) + ',' + b[1].toFixed(1);
-    return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + transportIcon(seg.transport) + '</g></g>';
+    return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + routeTransportGlyph(seg.transport) + '</g></g>';
   }).join(''); }).join('');
   var cities = visitedCities.map(function(city) { var p = mapGeometry.project(city.coordinates); return '<g class="city-marker" transform="translate(' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')"><circle r="7"/><circle class="city-core" r="2.6"/><text x="11" y="-10">' + escapeHtml(city.name) + '</text></g>'; }).join('');
   var photoPins = mapPhotos.map(function(photo, index) { var p = mapGeometry.project(photo.coordinates), shift = (index % 3) * 13; return '<g class="photo-pin" transform="translate(' + (p[0] - 25 + shift).toFixed(1) + ' ' + (p[1] - 72 - shift).toFixed(1) + ')" filter="url(#route-shadow)"><rect width="50" height="62" rx="5"/><image href="' + escapeHtml(photo.url || '') + '" x="5" y="5" width="40" height="39" preserveAspectRatio="xMidYMid slice"/><text x="25" y="56">' + escapeHtml(String(photo.date || '').slice(5, 10).replace('-', '.')) + '</text></g>'; }).join('');
@@ -875,6 +876,20 @@ function transportVisual(transport) {
 function transportIcon(transport) {
   var visual = transportVisual(transport);
   return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false" data-transport-icon="' + visual.name + '">' + visual.icon + '</svg>';
+}
+
+function routeTransportGlyph(transport) {
+  var visual = transportVisual(transport);
+  return '<g class="route-transport-glyph" transform="translate(-8.5 -8.5) scale(.708333)" data-transport-icon="' + visual.name + '" aria-hidden="true">' + visual.icon + '</g>';
+}
+
+function renderTransportIconGuide() {
+  var guide = document.querySelector("#transport-icon-guide");
+  if (!guide) return;
+  guide.innerHTML = '<span class="transport-icon-guide-title">交通图标</span>' + transportTypes.map(function(transport) {
+    var visual = transportVisual(transport);
+    return '<span class="transport-icon-guide-item" style="--transport-color:' + visual.color + '"><span class="transport-icon-guide-symbol">' + transportIcon(transport) + '</span><span>' + visual.name + '</span></span>';
+  }).join("");
 }
 function normalizeTransport(t) {
   var n = String(t || "").trim();

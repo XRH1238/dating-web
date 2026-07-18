@@ -527,12 +527,9 @@ p {
   stroke-width: 2.5;
 }
 
-.route-badge svg {
-  width: 17px;
-  height: 17px;
+.route-badge .route-transport-glyph {
   color: #fff;
   fill: currentColor;
-  transform: translate(-8.5px, -8.5px);
 }
 
 .city-marker > circle:first-child {
@@ -721,6 +718,51 @@ p {
 .route-summary svg {
   width: 16px;
   height: 16px;
+  fill: currentColor;
+}
+
+.transport-icon-guide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px;
+  border: 1px solid rgba(128, 80, 100, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.transport-icon-guide-title {
+  margin-right: 3px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.transport-icon-guide-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--transport-color);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.transport-icon-guide-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--transport-color);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--transport-color) 26%, transparent);
+}
+
+.transport-icon-guide-symbol svg {
+  width: 18px;
+  height: 18px;
   fill: currentColor;
 }
 

@@ -113,3 +113,21 @@ test('备用地图徽章使用共享交通方式配置而非固定玫红色', ()
   assert.ok(uses.length >= 2, 'SVG地图和备用地图都必须读取交通方式视觉配置');
   assert.match(script, /badge\.style\.background\s*=\s*visual\.color/);
 });
+
+test('SVG地图徽章直接绘制交通图形而不是嵌套SVG', () => {
+  assert.match(script, /function routeTransportGlyph\(transport\)/);
+  assert.match(script, /routeTransportGlyph\(seg\.transport\)/);
+  assert.doesNotMatch(
+    script,
+    /class="route-badge"[^\n]+transportIcon\(seg\.transport\)/,
+    '地图 SVG 内嵌套 SVG 会导致部分浏览器只显示彩色圆形背景'
+  );
+});
+
+test('地图下方始终展示六种交通图标说明', () => {
+  assert.match(html, /id="transport-icon-guide"/);
+  assert.match(script, /function renderTransportIconGuide\(\)/);
+  assert.match(script, /transportTypes\.map\(function\(transport\)/);
+  assert.match(styles, /\.transport-icon-guide\s*\{/);
+  assert.match(styles, /\.transport-icon-guide-item\s*\{/);
+});
