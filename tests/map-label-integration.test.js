@@ -78,3 +78,25 @@ test('地图标签和路线使用同一个正式行政区索引', () => {
   assert.match(script, /MapLabelLayout\.resolveAdministrativeCity/);
   assert.match(script, /cityIndex:\s*cityIndex/);
 });
+
+test('六种交通方式拥有共享且不同的主题色配置', () => {
+  const expectedColors = {
+    高铁: '#4E7FB3',
+    飞机: '#6D62B5',
+    自驾: '#C06F4C',
+    火车: '#7D5A49',
+    轮船: '#3F8C8C',
+    其他: '#8B6C91'
+  };
+  assert.match(script, /const transportVisuals\s*=/);
+  Object.entries(expectedColors).forEach(([name, color]) => {
+    assert.match(script, new RegExp(name + ':\\s*\\{[^}]*color:\\s*"' + color + '"'));
+  });
+});
+
+test('特色SVG包含交通方式标识并由共享函数输出', () => {
+  assert.match(script, /function transportVisual\(transport\)/);
+  assert.match(script, /data-transport-icon=/);
+  assert.match(script, /aria-hidden="true"/);
+  assert.match(script, /transportVisuals\[normalizeTransport\(transport\)\]/);
+});
