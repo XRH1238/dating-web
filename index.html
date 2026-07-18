@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260718-1" />
   </head>
   <body>
     <header class="site-header">
@@ -210,10 +210,16 @@
             标题
             <input name="title" type="text" placeholder="例如：厦门三日游" required />
           </label>
-          <label>
-            日期
-            <input name="date" type="text" placeholder="例如：2026.08.18" required />
-          </label>
+          <div class="date-range-fields">
+            <label>
+              开始日期
+              <input name="start_date" type="date" required />
+            </label>
+            <label>
+              结束日期
+              <input name="end_date" type="date" required />
+            </label>
+          </div>
           <div class="plan-fields" id="plan-fields">
             <div class="route-editor">
               <div class="route-editor-heading">
@@ -240,7 +246,7 @@
     <script src="china-counties-data.js"></script>
     <script src="china-cities-data.js"></script>
     <script src="china-provinces-data.js"></script>
-    <script src="map-label-layout.js"></script>
-    <script src="script.js"></script>
+    <script src="map-label-layout.js?v=20260718-1"></script>
+    <script src="script.js?v=20260718-1"></script>
   </body>
 </html>

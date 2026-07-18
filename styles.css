@@ -456,7 +456,6 @@ p {
 }
 
 .map-content {
-  transform-origin: center;
   will-change: transform;
 }
 
@@ -863,14 +862,15 @@ p {
 
 .mini-plan {
   display: grid;
-  grid-template-columns: 74px 1fr;
+  grid-template-columns: minmax(168px, 190px) 1fr;
   gap: 14px;
   padding: 18px;
 }
 
 .date-pill {
-  width: 58px;
-  height: 58px;
+  min-height: 58px;
+  padding: 10px 14px;
+  text-align: center;
 }
 
 .route-summary {
@@ -1229,6 +1229,12 @@ form {
   gap: 14px;
 }
 
+.date-range-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .plan-fields {
   display: block;
 }
@@ -1393,7 +1399,8 @@ textarea {
   }
 
   .mini-plan,
-  .timeline-item {
+  .timeline-item,
+  .date-range-fields {
     grid-template-columns: 1fr;
   }
 
