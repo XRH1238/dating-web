@@ -531,7 +531,8 @@ function renderFootprintMap() {
     mappedPlans.map(function(p) {
       return '<article><span><b>' + p.segments.length + '</b>' + escapeHtml(p.title || "出游路线") +
         '</span><p>' + p.segments.map(function(s) {
-          return '<span class="legend-segment-icon">' + transportIcon(s.transport) + '</span>' +
+          var visual = transportVisual(s.transport);
+          return '<span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
             escapeHtml(s.from + " → " + s.to + " · " + s.transport);
         }).join("") + '</p></article>';
     }).join("") + '</div>' +
@@ -640,9 +641,10 @@ function routeSvg(plans, visitedCities, mapPhotos) {
   var colors = ['#d95f78', '#528270', '#ca854a', '#587fa8'];
   var routes = plans.map(function(plan, planIndex) { return plan.segments.map(function(seg, segmentIndex) {
     var a = mapGeometry.project(seg.start), b = mapGeometry.project(seg.end), color = colors[planIndex % colors.length];
+    var visual = transportVisual(seg.transport);
     var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - Math.min(58, Math.abs(a[0] - b[0]) * .13);
     var path = 'M' + a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' Q' + mx.toFixed(1) + ',' + my.toFixed(1) + ' ' + b[0].toFixed(1) + ',' + b[1].toFixed(1);
-    return '<g class="route-group" style="--route-color:' + color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + transportIcon(seg.transport) + '</g></g>';
+    return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + transportIcon(seg.transport) + '</g></g>';
   }).join(''); }).join('');
   var cities = visitedCities.map(function(city) { var p = mapGeometry.project(city.coordinates); return '<g class="city-marker" transform="translate(' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')"><circle r="7"/><circle class="city-core" r="2.6"/><text x="11" y="-10">' + escapeHtml(city.name) + '</text></g>'; }).join('');
   var photoPins = mapPhotos.map(function(photo, index) { var p = mapGeometry.project(photo.coordinates), shift = (index % 3) * 13; return '<g class="photo-pin" transform="translate(' + (p[0] - 25 + shift).toFixed(1) + ' ' + (p[1] - 72 - shift).toFixed(1) + ')" filter="url(#route-shadow)"><rect width="50" height="62" rx="5"/><image href="' + escapeHtml(photo.url || '') + '" x="5" y="5" width="40" height="39" preserveAspectRatio="xMidYMid slice"/><text x="25" y="56">' + escapeHtml(String(photo.date || '').slice(5, 10).replace('-', '.')) + '</text></g>'; }).join('');
@@ -835,10 +837,13 @@ function updateChinaMapRoutes(plans) {
       chinaMap.add(line); _mapPolylines.push(line);
 
       var mid = [(s[0]+e[0])/2, (s[1]+e[1])/2];
+      var visual = transportVisual(seg.transport);
       var badge = document.createElement("div");
       badge.innerHTML = transportIcon(seg.transport);
-      badge.style.cssText = "width:26px;height:26px;background:rgba(217,95,120,0.92);border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 8px rgba(0,0,0,0.3);";
-      badge.querySelector("svg") && badge.querySelector("svg").setAttribute("style", "width:14px;height:14px;fill:#fff");
+      badge.style.cssText = "width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 8px rgba(0,0,0,0.3);color:#fff;";
+      badge.style.background = visual.color;
+      badge.setAttribute("aria-label", visual.name);
+      badge.querySelector("svg") && badge.querySelector("svg").setAttribute("style", "width:14px;height:14px;fill:currentColor");
       var m = new AMap.Marker({ position: mid, content: badge, offset: new AMap.Pixel(-13, -13), zIndex: 60 });
       chinaMap.add(m); _mapBadgeMarkers.push(m);
     });

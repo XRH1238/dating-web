@@ -522,7 +522,7 @@ p {
 }
 
 .route-badge circle {
-  fill: var(--route-color);
+  fill: var(--transport-color);
   stroke: #fff;
   stroke-width: 2.5;
 }
@@ -530,7 +530,8 @@ p {
 .route-badge svg {
   width: 17px;
   height: 17px;
-  fill: #fff;
+  color: #fff;
+  fill: currentColor;
   transform: translate(-8.5px, -8.5px);
 }
 
@@ -605,7 +606,8 @@ p {
 .amap-route-badge svg {
   width: 14px;
   height: 14px;
-  fill: #fff;
+  color: #fff;
+  fill: currentColor;
 }
 
 .map-overlay {
@@ -701,11 +703,17 @@ p {
   line-height: 1.5;
 }
 
-.legend-segment-icon {
+.map-route-list .legend-segment-icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   margin-right: 5px;
+  border: 1px solid color-mix(in srgb, var(--transport-color) 28%, transparent);
+  border-radius: 6px;
+  color: var(--transport-color);
+  background: color-mix(in srgb, var(--transport-color) 12%, white);
   vertical-align: -4px;
 }
 

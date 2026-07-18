@@ -100,3 +100,16 @@ test('特色SVG包含交通方式标识并由共享函数输出', () => {
   assert.match(script, /aria-hidden="true"/);
   assert.match(script, /transportVisuals\[normalizeTransport\(transport\)\]/);
 });
+
+test('SVG地图徽章和路线图例共享交通方式主题色', () => {
+  assert.match(script, /transportVisual\(s\.transport\)/);
+  assert.match(script, /--transport-color:/);
+  assert.match(styles, /\.route-badge circle\s*\{[^}]*var\(--transport-color\)/s);
+  assert.match(styles, /\.map-route-list \.legend-segment-icon\s*\{[^}]*var\(--transport-color\)/s);
+});
+
+test('备用地图徽章使用共享交通方式配置而非固定玫红色', () => {
+  const uses = script.match(/transportVisual\(seg\.transport\)/g) || [];
+  assert.ok(uses.length >= 2, 'SVG地图和备用地图都必须读取交通方式视觉配置');
+  assert.match(script, /badge\.style\.background\s*=\s*visual\.color/);
+});
