@@ -11,9 +11,10 @@ const milestoneDays = [300, 365, 520, 666, 999, 1314];
 
 const transportTypes = ["高铁", "飞机", "自驾", "火车", "轮船", "其他"];
 const transportVisuals = {
+  // Adapted from OpenMoji 1F684 (CC BY-SA 4.0): https://openmoji.org/library/emoji-1F684/
   高铁: {
     name: "高铁", color: "#4E7FB3",
-    icon: '<path d="M2 15.8c0-2.5 1.5-4.8 3.8-5.8l8.1-3.5c2.3-1 4.9-.7 6.9.7l1.2.9-2 4.1-4.1 2.4H7.2L5.8 17H2v-1.2Zm4.6-4.1c-.9.4-1.6 1.1-2 2h10.7l3.6-2.1.8-1.7c-1.5-.9-3.3-1-4.9-.3l-1.4.6 1.2 1.5h-2.5l-.8-.6-4.7 2.6v-2Zm.2 6.5h11.4v1.8H6.8v-1.8Z"/>'
+    icon: '<g transform="scale(.333333)"><path data-baseline="roof" style="fill:#fff;stroke:#1f1f1f;stroke-width:2;stroke-linejoin:round" d="M68 48 6.22 47.5 5.09 43.54 36.85 24.2H68Z"/><path data-baseline="base" style="fill:#9b9b9a;stroke:#1f1f1f;stroke-width:2;stroke-linejoin:round" d="M68 48v5.5H12.65a1 1 0 0 1-.5-1.87L18.41 48Z"/><path style="fill:#3f3f3f" d="M68 36.5H41.84a1.286 1.286 0 0 1-.69-2.37l7.26-4.62a12.86 12.86 0 0 1 6.9-2.01H68ZM15.61 36.5h9.5a12.86 12.86 0 0 0 6.9-2.01l7.26-4.62a1.286 1.286 0 0 0-.69-2.37h-7.2Z"/><path data-baseline="waist" style="fill:#d22f27;stroke:#1f1f1f;stroke-width:1.7;stroke-linejoin:round" d="M18.64 44H67.93V40h-43.3a5.7 5.7 0 0 0-3.07.89l-3.23 2.06a.57.57 0 0 0 .31 1.05Z"/></g>'
   },
   飞机: {
     name: "飞机", color: "#6D62B5",

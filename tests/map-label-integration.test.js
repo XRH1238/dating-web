@@ -94,6 +94,18 @@ test('六种交通方式拥有共享且不同的主题色配置', () => {
   });
 });
 
+test('高铁图标的车顶腰线和底线保持水平平行', () => {
+  const iconBlock = script.match(/高铁:\s*\{[\s\S]*?icon:\s*'([^']+)'/);
+  assert.ok(iconBlock, '必须能读取高铁图标配置');
+  ['roof', 'waist', 'base'].forEach((baseline) => {
+    assert.match(
+      iconBlock[1],
+      new RegExp('data-baseline="' + baseline + '"[^>]*d="[^"]*H'),
+      baseline + ' 必须使用水平路径命令'
+    );
+  });
+});
+
 test('特色SVG包含交通方式标识并由共享函数输出', () => {
   assert.match(script, /function transportVisual\(transport\)/);
   assert.match(script, /data-transport-icon=/);
