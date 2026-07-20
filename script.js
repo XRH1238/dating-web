@@ -9,23 +9,34 @@ const todoPageSize = 10;
 const loveStartDate = "2025-09-06";
 const milestoneDays = [300, 365, 520, 666, 999, 1314];
 
-// City coordinates for route mapping (WGS-84)
-const cityCoordinates = {
-  北京: [116.4074, 39.9042], 天津: [117.2009, 39.0842], 上海: [121.4737, 31.2304],
-  重庆: [106.5516, 29.563], 广州: [113.2644, 23.1291], 深圳: [114.0579, 22.5431],
-  杭州: [120.1551, 30.2741], 南京: [118.7969, 32.0603], 苏州: [120.5853, 31.2989],
-  成都: [104.0665, 30.5728], 西安: [108.9398, 34.3416], 武汉: [114.3054, 30.5931],
-  长沙: [112.9388, 28.2282], 厦门: [118.0894, 24.4798], 青岛: [120.3826, 36.0671],
-  大连: [121.6147, 38.914], 哈尔滨: [126.6424, 45.7567], 沈阳: [123.4315, 41.8057],
-  长春: [125.3235, 43.8171], 济南: [117.1201, 36.6512], 郑州: [113.6254, 34.7466],
-  合肥: [117.2272, 31.8206], 福州: [119.2965, 26.0745], 南昌: [115.8582, 28.6829],
-  南宁: [108.3669, 22.817], 海口: [110.1983, 20.044], 三亚: [109.5119, 18.2528],
-  昆明: [102.8329, 24.8801], 贵阳: [106.6302, 26.647], 兰州: [103.8343, 36.0611],
-  西宁: [101.7782, 36.6171], 银川: [106.2309, 38.4872], 呼和浩特: [111.7492, 40.8426],
-  乌鲁木齐: [87.6168, 43.8256], 拉萨: [91.1172, 29.6469], 香港: [114.1694, 22.3193],
-  澳门: [113.5439, 22.1987], 台北: [121.5654, 25.033],
-};
 const transportTypes = ["高铁", "飞机", "自驾", "火车", "轮船", "其他"];
+const transportVisuals = {
+  // Adapted from OpenMoji 1F684 (CC BY-SA 4.0): https://openmoji.org/library/emoji-1F684/
+  高铁: {
+    name: "高铁", color: "#4E7FB3",
+    icon: '<g transform="scale(.333333)"><path data-baseline="roof" style="fill:#fff;stroke:#1f1f1f;stroke-width:2;stroke-linejoin:round" d="M68 48 6.22 47.5 5.09 43.54 36.85 24.2H68Z"/><path data-baseline="base" style="fill:#9b9b9a;stroke:#1f1f1f;stroke-width:2;stroke-linejoin:round" d="M68 48v5.5H12.65a1 1 0 0 1-.5-1.87L18.41 48Z"/><path style="fill:#3f3f3f" d="M68 36.5H41.84a1.286 1.286 0 0 1-.69-2.37l7.26-4.62a12.86 12.86 0 0 1 6.9-2.01H68ZM15.61 36.5h9.5a12.86 12.86 0 0 0 6.9-2.01l7.26-4.62a1.286 1.286 0 0 0-.69-2.37h-7.2Z"/><path data-baseline="waist" style="fill:#d22f27;stroke:#1f1f1f;stroke-width:1.7;stroke-linejoin:round" d="M18.64 44H67.93V40h-43.3a5.7 5.7 0 0 0-3.07.89l-3.23 2.06a.57.57 0 0 0 .31 1.05Z"/></g>'
+  },
+  飞机: {
+    name: "飞机", color: "#6D62B5",
+    icon: '<path d="M21.7 11.1c.4.2.7.5.7.9s-.3.8-.7.9l-6.5 2.3-1.9 6h-2l.3-5.5-5.2 1.8-1.7 2H3.2l.8-3.7-2.4-1.3v-1.6l3 .4 7-2.5-.3-7.1h2l2 6 6.4.3v1.1Z"/>'
+  },
+  自驾: {
+    name: "自驾", color: "#C06F4C",
+    icon: '<path d="M6.2 5h11.6l2.1 5.3c1.1.5 1.8 1.5 1.8 2.7v5.2h-2.3V21h-2.2v-2.8H6.8V21H4.6v-2.8H2.3V13c0-1.2.7-2.2 1.8-2.7L6.2 5Zm1.5 2-1.2 3h11l-1.2-3H7.7ZM5.8 12.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Zm12.4 0a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8Z"/>'
+  },
+  火车: {
+    name: "火车", color: "#7D5A49",
+    icon: '<path d="M7 2h10c1.7 0 3 1.3 3 3v10c0 1.5-1.1 2.7-2.5 3l2 3H17l-1.3-2H8.3L7 21H4.5l2-3C5.1 17.7 4 16.5 4 15V5c0-1.7 1.3-3 3-3Zm0 2c-.6 0-1 .4-1 1v4h12V5c0-.6-.4-1-1-1H7Zm-1 7v4c0 .6.4 1 1 1h10c.6 0 1-.4 1-1v-4H6Zm2.1 1.3a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm7.8 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/><path d="M8 6h8v1.6H8z"/>'
+  },
+  轮船: {
+    name: "轮船", color: "#3F8C8C",
+    icon: '<path d="M10.8 2h2.4v3H17l2 5.2 3 .9-2.8 5.4c-.6 1.2-1.8 2-3.2 2-.9 0-1.8-.3-2.5-.9-.8.6-1.6.9-2.5.9s-1.8-.3-2.5-.9c-.8.6-1.6.9-2.5.9-1.4 0-2.6-.8-3.2-2L.2 11.1l3.8-.9L6 5h4.8V2ZM7.5 7l-1 2.7h11L16.5 7h-9Zm-4.2 5.6 1.3 2.7c.3.7.8 1 1.5 1 .6 0 1.2-.2 1.8-.8l.7-.7.7.7c.6.6 1.1.8 1.8.8.6 0 1.2-.2 1.8-.8l.7-.7.7.7c.6.6 1.1.8 1.8.8.7 0 1.2-.3 1.5-1l1.3-2.7-2.1-.6H5.4l-2.1.6ZM3.5 20c1.1 0 1.8.3 2.5.8.7-.5 1.5-.8 2.5-.8s1.8.3 2.5.8c.7-.5 1.5-.8 2.5-.8s1.8.3 2.5.8c.7-.5 1.5-.8 2.5-.8v2c-.7 0-1.2.2-1.7.7l-.8.7-.8-.7c-.5-.5-1-.7-1.7-.7s-1.2.2-1.7.7l-.8.7-.8-.7c-.5-.5-1-.7-1.7-.7s-1.2.2-1.7.7l-.8.7-.8-.7c-.5-.5-1-.7-1.7-.7v-2Z"/>'
+  },
+  其他: {
+    name: "其他", color: "#8B6C91",
+    icon: '<path d="M12 1.5A10.5 10.5 0 1 1 1.5 12 10.5 10.5 0 0 1 12 1.5Zm0 2A8.5 8.5 0 1 0 20.5 12 8.5 8.5 0 0 0 12 3.5Zm4.8 3.7-2.6 7-7 2.6 2.6-7 7-2.6Zm-3.1 3.1-2.3.9-.9 2.3 2.3-.9.9-2.3Z"/>'
+  }
+};
 const provinceNames = {
   11: "北京", 12: "天津", 13: "河北", 14: "山西", 15: "内蒙古",
   21: "辽宁", 22: "吉林", 23: "黑龙江", 31: "上海", 32: "江苏",
@@ -50,6 +61,8 @@ const form = document.querySelector("#quick-form");
 const panelTitle = document.querySelector("#panel-title");
 const panelLabel = document.querySelector("#panel-label");
 const planFields = document.querySelector("#plan-fields");
+const startDateInput = form && form.elements.start_date;
+const endDateInput = form && form.elements.end_date;
 const todoForm = document.querySelector("#todo-form");
 const photoInput = document.querySelector("#photo-input");
 const photoCityInput = document.querySelector("#photo-city");
@@ -63,6 +76,9 @@ let mapView = { scale: 1, x: 0, y: 0 };
 let mapDrag = null;
 let mapGeometry = null;
 let mapFrame = 0;
+let mapPriorityCities = new Set();
+let mapCityLabels = [];
+let administrativeCityIndex = null;
 
 // ========== WGS-84 to GCJ-02 ==========
 function wgs84ToGcj02(lng, lat) {
@@ -106,6 +122,7 @@ function getFeatureCentroid(feature) {
 
 // ========== Init ==========
 document.addEventListener("DOMContentLoaded", init);
+window.addEventListener("resize", scheduleMapView);
 
 async function init() {
   bindEvents();
@@ -135,15 +152,29 @@ function bindEvents() {
   form.addEventListener("submit", async function(e) {
     e.preventDefault();
     var fd = new FormData(form);
-    var entry = { title: fd.get("title").trim(), date: fd.get("date").trim(), description: fd.get("description").trim() };
+    var date;
+    try {
+      date = window.MapLabelLayout.serializeDateRange(fd.get("start_date"), fd.get("end_date"));
+      endDateInput.setCustomValidity("");
+    } catch (error) {
+      endDateInput.setCustomValidity(error.message);
+      endDateInput.reportValidity();
+      endDateInput.focus();
+      return;
+    }
+    var entry = { title: fd.get("title").trim(), date: date, description: fd.get("description").trim() };
     if (activeType === "plan") {
       entry.segments = getRouteSegments();
       await savePlan(entry);
     } else {
       await saveRecord(entry);
     }
-    form.reset(); closePanel();
+    form.reset();
+    endDateInput.min = "";
+    closePanel();
   });
+  startDateInput.addEventListener("input", syncEndDateMinimum);
+  endDateInput.addEventListener("input", syncEndDateMinimum);
   if (todoForm) {
     todoForm.addEventListener("submit", async function(e) {
       e.preventDefault();
@@ -156,6 +187,12 @@ function bindEvents() {
   if (photoInput) {
     photoInput.addEventListener("change", function() { uploadPhotos(this.files); });
   }
+}
+
+function syncEndDateMinimum() {
+  endDateInput.min = startDateInput.value;
+  var invalid = startDateInput.value && endDateInput.value && endDateInput.value < startDateInput.value;
+  endDateInput.setCustomValidity(invalid ? "结束日期不能早于开始日期" : "");
 }
 
 function togglePlanFields(show) {
@@ -198,6 +235,19 @@ function getRouteSegments() {
     if (from.trim() && to.trim()) segments.push({ from: from.trim(), to: to.trim(), transport: transport });
   });
   return segments;
+}
+
+function getAdministrativeCityIndex() {
+  if (!administrativeCityIndex && window.CHINA_CITIES_GEOJSON && window.MapLabelLayout) {
+    administrativeCityIndex = window.MapLabelLayout.buildAdministrativeCityIndex(
+      window.CHINA_CITIES_GEOJSON.features
+    );
+  }
+  return administrativeCityIndex;
+}
+
+function resolveCity(name) {
+  return window.MapLabelLayout.resolveAdministrativeCity(getAdministrativeCityIndex(), name);
 }
 
 document.addEventListener("click", function(e) {
@@ -311,7 +361,8 @@ async function uploadPhotos(files) {
     var file = files[i];
     var entry = { name: file.name, created_at: new Date().toISOString() };
     if (state.backendReady) {
-      var folder = city && cityCoordinates[city] ? city : "unplaced";
+      var resolvedCity = resolveCity(city);
+      var folder = resolvedCity ? resolvedCity.name : "unplaced";
       var path = folder + "/" + Date.now() + "-" + file.name;
       await state.client.storage.from(storageBucket).upload(path, file);
       var url = state.client.storage.from(storageBucket).getPublicUrl(path).data.publicUrl;
@@ -366,7 +417,7 @@ function renderPlans() {
     return;
   }
   list.innerHTML = state.plans.map(function(p, i) {
-    return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(String(p.date || "").slice(-5)) +
+    return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
       '</span><div><h3>' + escapeHtml(p.title || "") + '</h3><p>' + escapeHtml(p.description || "") +
       '</p></div><button class="delete-btn" data-delete-plan="' + i + '">×</button></article>';
   }).join("");
@@ -384,7 +435,7 @@ function renderRecords() {
     return;
   }
   list.innerHTML = state.records.map(function(r) {
-    return '<article class="timeline-item"><time>' + escapeHtml(r.date || "") + '</time><div><h3>' +
+    return '<article class="timeline-item"><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><div><h3>' +
       escapeHtml(r.title || "") + '</h3><p>' + escapeHtml(r.description || "") + '</p></div></article>';
   }).join("");
 }
@@ -436,12 +487,15 @@ function renderFootprintMap() {
   var mapEl = document.querySelector("#footprint-map");
   var overlay = document.querySelector("#map-overlay");
   var legend = document.querySelector("#map-legend");
-  if (!mapEl || !overlay || !legend) return;
+  renderTransportIconGuide();
+  if (!mapEl || !legend) return;
 
   var mappedPlans = state.plans.map(function(p) {
     var segs = normalizePlanSegments(p).map(function(s) {
-      return { from: s.from, to: s.to, transport: s.transport,
-        start: cityCoordinates[s.from], end: cityCoordinates[s.to] };
+      var from = resolveCity(s.from);
+      var to = resolveCity(s.to);
+      return { from: from ? from.name : s.from, to: to ? to.name : s.to, transport: s.transport,
+        start: from && from.coordinates, end: to && to.coordinates };
     }).filter(function(s) { return s.start && s.end; });
     return { title: p.title, segments: segs };
   }).filter(function(p) { return p.segments.length; });
@@ -457,14 +511,14 @@ function renderFootprintMap() {
 
   state.plans.forEach(function(p) {
     normalizePlanSegments(p).forEach(function(s) {
-      if (s.from && !cityCoordinates[s.from] && unknownCities.indexOf(s.from) === -1) unknownCities.push(s.from);
-      if (s.to && !cityCoordinates[s.to] && unknownCities.indexOf(s.to) === -1) unknownCities.push(s.to);
+      if (s.from && !resolveCity(s.from) && unknownCities.indexOf(s.from) === -1) unknownCities.push(s.from);
+      if (s.to && !resolveCity(s.to) && unknownCities.indexOf(s.to) === -1) unknownCities.push(s.to);
     });
   });
 
   var mapPhotos = state.photos.map(function(photo) {
-    var city = getPhotoCity(photo);
-    return city && cityCoordinates[city] ? { city: city, url: photo.url, date: photo.created_at } : null;
+    var city = resolveCity(getPhotoCity(photo));
+    return city ? { city: city.name, coordinates: city.coordinates, url: photo.url, date: photo.created_at } : null;
   }).filter(Boolean);
   renderChinaMap(mapEl, overlay, mappedPlans, Array.from(visited.values()), mapPhotos);
 
@@ -479,7 +533,8 @@ function renderFootprintMap() {
     mappedPlans.map(function(p) {
       return '<article><span><b>' + p.segments.length + '</b>' + escapeHtml(p.title || "出游路线") +
         '</span><p>' + p.segments.map(function(s) {
-          return '<span class="legend-segment-icon">' + transportIcon(s.transport) + '</span>' +
+          var visual = transportVisual(s.transport);
+          return '<span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
             escapeHtml(s.from + " → " + s.to + " · " + s.transport);
         }).join("") + '</p></article>';
     }).join("") + '</div>' +
@@ -511,8 +566,22 @@ function renderChinaMap(container, overlay, plans, visitedCities, mapPhotos) {
   }
   if (!mapGeometry) mapGeometry = buildMapGeometry();
   if (!mapGeometry) return;
+  mapPriorityCities = new Set();
+  plans.forEach(function(plan) {
+    plan.segments.forEach(function(segment) {
+      if (segment.from) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(segment.from));
+      if (segment.to) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(segment.to));
+    });
+  });
+  visitedCities.forEach(function(city) {
+    if (city.name) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(city.name));
+  });
+  (mapPhotos || []).forEach(function(photo) {
+    if (photo.city) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(photo.city));
+  });
   container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + mapGeometry.provinceLabels + mapGeometry.cityLabels + routeSvg(plans, visitedCities, mapPhotos || []) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
   chinaMap = container.querySelector(".china-svg");
+  mapCityLabels = Array.from(chinaMap.querySelectorAll('.city-labels text'));
   bindMapInteractions(container);
   applyMapView();
   if (overlay) overlay.innerHTML = '';
@@ -520,6 +589,7 @@ function renderChinaMap(container, overlay, plans, visitedCities, mapPhotos) {
 
 function buildMapGeometry() {
   var cities = window.CHINA_CITIES_GEOJSON.features;
+  var cityIndex = getAdministrativeCityIndex();
   var provinces = (window.CHINA_PROVINCES_GEOJSON && window.CHINA_PROVINCES_GEOJSON.features) || [];
   var minLon = 73, maxLon = 136, minLat = 17, maxLat = 55, padding = 38;
   function project(point) {
@@ -555,13 +625,17 @@ function buildMapGeometry() {
     return project(cross ? [x / (3 * cross), y / (3 * cross)] : largestRing[0]);
   }
   function provinceLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
-  function cityLabel(feature) { var p = centerFor(feature); return '<text x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(feature.properties.name || '') + '</text>'; }
+  function cityLabel(entry, index) {
+    var p = project(entry.coordinates), name = entry.name;
+    return '<text data-city="' + escapeHtml(name) + '" data-label-index="' + index + '" x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '">' + escapeHtml(name) + '</text>';
+  }
   return {
+    cityIndex: cityIndex,
     project: project,
     cities: '<g class="city-layer">' + cities.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
     provinces: '<g class="province-layer">' + provinces.map(function(f) { return '<path d="' + pathFor(f.geometry) + '"/>'; }).join('') + '</g>',
     provinceLabels: '<g class="province-labels">' + provinces.map(provinceLabel).join('') + '</g>',
-    cityLabels: '<g class="city-labels">' + cities.map(cityLabel).join('') + '</g>'
+    cityLabels: '<g class="city-labels">' + cityIndex.entries.map(cityLabel).join('') + '</g>'
   };
 }
 
@@ -569,12 +643,13 @@ function routeSvg(plans, visitedCities, mapPhotos) {
   var colors = ['#d95f78', '#528270', '#ca854a', '#587fa8'];
   var routes = plans.map(function(plan, planIndex) { return plan.segments.map(function(seg, segmentIndex) {
     var a = mapGeometry.project(seg.start), b = mapGeometry.project(seg.end), color = colors[planIndex % colors.length];
+    var visual = transportVisual(seg.transport);
     var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - Math.min(58, Math.abs(a[0] - b[0]) * .13);
     var path = 'M' + a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' Q' + mx.toFixed(1) + ',' + my.toFixed(1) + ' ' + b[0].toFixed(1) + ',' + b[1].toFixed(1);
-    return '<g class="route-group" style="--route-color:' + color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + transportIcon(seg.transport) + '</g></g>';
+    return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + routeTransportGlyph(seg.transport) + '</g></g>';
   }).join(''); }).join('');
   var cities = visitedCities.map(function(city) { var p = mapGeometry.project(city.coordinates); return '<g class="city-marker" transform="translate(' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')"><circle r="7"/><circle class="city-core" r="2.6"/><text x="11" y="-10">' + escapeHtml(city.name) + '</text></g>'; }).join('');
-  var photoPins = mapPhotos.map(function(photo, index) { var p = mapGeometry.project(cityCoordinates[photo.city]), shift = (index % 3) * 13; return '<g class="photo-pin" transform="translate(' + (p[0] - 25 + shift).toFixed(1) + ' ' + (p[1] - 72 - shift).toFixed(1) + ')" filter="url(#route-shadow)"><rect width="50" height="62" rx="5"/><image href="' + escapeHtml(photo.url || '') + '" x="5" y="5" width="40" height="39" preserveAspectRatio="xMidYMid slice"/><text x="25" y="56">' + escapeHtml(String(photo.date || '').slice(5, 10).replace('-', '.')) + '</text></g>'; }).join('');
+  var photoPins = mapPhotos.map(function(photo, index) { var p = mapGeometry.project(photo.coordinates), shift = (index % 3) * 13; return '<g class="photo-pin" transform="translate(' + (p[0] - 25 + shift).toFixed(1) + ' ' + (p[1] - 72 - shift).toFixed(1) + ')" filter="url(#route-shadow)"><rect width="50" height="62" rx="5"/><image href="' + escapeHtml(photo.url || '') + '" x="5" y="5" width="40" height="39" preserveAspectRatio="xMidYMid slice"/><text x="25" y="56">' + escapeHtml(String(photo.date || '').slice(5, 10).replace('-', '.')) + '</text></g>'; }).join('');
   return '<g class="route-layer">' + routes + cities + photoPins + '</g>';
 }
 
@@ -608,10 +683,53 @@ function scheduleMapView() {
 
 function applyMapView() {
   if (!chinaMap) return;
+  var clampedView = window.MapLabelLayout.clampMapTranslation(mapView);
+  mapView.x = clampedView.x;
+  mapView.y = clampedView.y;
   var content = chinaMap.querySelector('.map-content');
   if (content) content.setAttribute('transform', 'translate(' + mapView.x.toFixed(1) + ' ' + mapView.y.toFixed(1) + ') translate(500 360) scale(' + mapView.scale.toFixed(3) + ') translate(-500 -360)');
   chinaMap.classList.toggle('is-zoomed', mapView.scale > 1.35);
   chinaMap.classList.toggle('is-city-detail', mapView.scale >= 3);
+  updateCityLabelLayout();
+}
+
+function updateCityLabelLayout() {
+  if (!chinaMap || !window.MapLabelLayout) return;
+  var width = chinaMap.clientWidth || 1000;
+  var height = chinaMap.clientHeight || 720;
+  var renderScale = Math.min(width / 1000, height / 720);
+  var offsetX = (width - 1000 * renderScale) / 2;
+  var offsetY = (height - 720 * renderScale) / 2;
+  var candidates = mapCityLabels.map(function(label, index) {
+    var name = label.dataset.city || '';
+    return {
+      id: label.dataset.labelIndex || String(index),
+      name: name,
+      x: Number(label.getAttribute('x')),
+      y: Number(label.getAttribute('y')),
+      priority: mapPriorityCities.has(window.MapLabelLayout.canonicalCityName(name)),
+      index: Number(label.dataset.labelIndex || index)
+    };
+  });
+  var visible = window.MapLabelLayout.layoutCityLabels(candidates, {
+    scale: mapView.scale,
+    x: mapView.x,
+    y: mapView.y,
+    width: width,
+    height: height,
+    renderScale: renderScale,
+    offsetX: offsetX,
+    offsetY: offsetY,
+    compact: width < 640
+  });
+  mapCityLabels.forEach(function(label, index) {
+    label.style.display = visible.has(label.dataset.labelIndex || String(index)) ? '' : 'none';
+  });
+  var group = chinaMap.querySelector('.city-labels');
+  if (group) {
+    group.style.setProperty('--city-label-font-size', (12 / (mapView.scale * renderScale)).toFixed(3) + 'px');
+    group.style.setProperty('--city-label-stroke-width', (3 / (mapView.scale * renderScale)).toFixed(3) + 'px');
+  }
 }
 
 function initChinaMap(container) {
@@ -721,10 +839,13 @@ function updateChinaMapRoutes(plans) {
       chinaMap.add(line); _mapPolylines.push(line);
 
       var mid = [(s[0]+e[0])/2, (s[1]+e[1])/2];
+      var visual = transportVisual(seg.transport);
       var badge = document.createElement("div");
       badge.innerHTML = transportIcon(seg.transport);
-      badge.style.cssText = "width:26px;height:26px;background:rgba(217,95,120,0.92);border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 8px rgba(0,0,0,0.3);";
-      badge.querySelector("svg") && badge.querySelector("svg").setAttribute("style", "width:14px;height:14px;fill:#fff");
+      badge.style.cssText = "width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 8px rgba(0,0,0,0.3);color:#fff;";
+      badge.style.background = visual.color;
+      badge.setAttribute("aria-label", visual.name);
+      badge.querySelector("svg") && badge.querySelector("svg").setAttribute("style", "width:14px;height:14px;fill:currentColor");
       var m = new AMap.Marker({ position: mid, content: badge, offset: new AMap.Pixel(-13, -13), zIndex: 60 });
       chinaMap.add(m); _mapBadgeMarkers.push(m);
     });
@@ -749,17 +870,27 @@ function updateChinaMapMarkers(visitedCities) {
 }
 
 // ========== Utilities ==========
+function transportVisual(transport) {
+  return transportVisuals[normalizeTransport(transport)] || transportVisuals.其他;
+}
+
 function transportIcon(transport) {
-  var n = normalizeTransport(transport);
-  var icons = {
-    高铁: '<svg viewBox="0 0 24 24"><path d="M7 3h10c1.7 0 3 1.3 3 3v8.2c0 1.4-1.1 2.6-2.5 2.8l1.8 2H17l-1.6-1.8H8.6L7 19H4.7l1.8-2C5.1 16.8 4 15.6 4 14.2V6c0-1.7 1.3-3 3-3Zm0 2c-.6 0-1 .4-1 1v3h12V6c0-.6-.4-1-1-1H7Zm-.8 6v3.1c0 .5.4.9.9.9h9.8c.5 0 .9-.4.9-.9V11H6.2Zm2.3 1.2h2.2v1.7H8.5v-1.7Zm4.8 0h2.2v1.7h-2.2v-1.7Z"/></svg>',
-    飞机: '<svg viewBox="0 0 24 24"><path d="M21.5 12.4c.3.2.5.5.5.9s-.2.7-.5.9l-6.4 3.5-.7 3.4c-.1.5-.5.9-1 .9h-1.2l-.9-2.6-2.8 1.5-.5 1.2H6.5l.2-3.1-3.3-1.8v-1.5l4.2.4 3.5-1.9-7.9-4.3V8.4h2.1l8.1 2.5 5.4-3c1.3-.7 2.8.6 2.1 1.9l-1.1 2 1.7.6Z"/></svg>',
-    自驾: '<svg viewBox="0 0 24 24"><path d="M6.6 6h10.8l2.1 5.2c.9.4 1.5 1.2 1.5 2.3V18h-2v2h-2.2v-2H7.2v2H5v-2H3v-4.5c0-1 .6-1.9 1.5-2.3L6.6 6Zm1.4 2-1.2 3h10.4L16 8H8Zm-2.1 5c-.5 0-.9.4-.9.9s.4.9.9.9 1-.4 1-.9-.5-.9-1-.9Zm12.2 0c-.5 0-1 .4-1 .9s.5.9 1 .9.9-.4.9-.9-.4-.9-.9-.9Z"/></svg>',
-    火车: '<svg viewBox="0 0 24 24"><path d="M7 3h10c1.7 0 3 1.3 3 3v8c0 1.5-1.1 2.8-2.5 3l2 3H17l-1.4-2H8.4L7 20H4.5l2-3C5.1 16.8 4 15.5 4 14V6c0-1.7 1.3-3 3-3Zm0 2c-.6 0-1 .4-1 1v2h12V6c0-.6-.4-1-1-1H7Zm-1 5v4c0 .6.4 1 1 1h10c.6 0 1-.4 1-1v-4H6Zm2 1.4h2.5v2H8v-2Zm5.5 0H16v2h-2.5v-2Z"/></svg>',
-    轮船: '<svg viewBox="0 0 24 24"><path d="M5 10.5 7 5h4V2h2v3h4l2 5.5 2 .8-2.7 5.4c-.6 1.1-1.6 1.8-2.9 1.8-.9 0-1.7-.3-2.4-.9-.7.6-1.5.9-2.4.9s-1.7-.3-2.4-.9c-.7.6-1.5.9-2.4.9-1.2 0-2.3-.7-2.9-1.8L.9 11.3 5 10.5Zm3.4-3.5-1.1 3h9.4l-1.1-3H8.4Zm-4.3 5.8 1.4 2.8c.3.6.8.9 1.5.9s1.2-.3 1.7-.8l.8-.8.8.8c.5.5 1 .8 1.7.8s1.2-.3 1.7-.8l.8-.8.8.8c.5.5 1 .8 1.7.8s1.2-.3 1.5-.9l1.4-2.8-2.6-1H6.7l-2.6 1Z"/></svg>',
-    其他: '<svg viewBox="0 0 24 24"><path d="M6.5 4.5a3.5 3.5 0 0 1 7 0c0 2.5-3.5 6.6-3.5 6.6S6.5 7 6.5 4.5Zm2 0a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0ZM15 13c1.7 0 3 1.3 3 3 0 2.1-3 5.5-3 5.5S12 18.1 12 16c0-1.7 1.3-3 3-3Zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM4 14.5c0-1.9 1.6-3.5 3.5-3.5H9v2H7.5a1.5 1.5 0 0 0 0 3H10v2H7.5A3.5 3.5 0 0 1 4 14.5Z"/></svg>',
-  };
-  return icons[n] || "行";
+  var visual = transportVisual(transport);
+  return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false" data-transport-icon="' + visual.name + '">' + visual.icon + '</svg>';
+}
+
+function routeTransportGlyph(transport) {
+  var visual = transportVisual(transport);
+  return '<g class="route-transport-glyph" transform="translate(-8.5 -8.5) scale(.708333)" data-transport-icon="' + visual.name + '" aria-hidden="true">' + visual.icon + '</g>';
+}
+
+function renderTransportIconGuide() {
+  var guide = document.querySelector("#transport-icon-guide");
+  if (!guide) return;
+  guide.innerHTML = '<span class="transport-icon-guide-title">交通图标</span>' + transportTypes.map(function(transport) {
+    var visual = transportVisual(transport);
+    return '<span class="transport-icon-guide-item" style="--transport-color:' + visual.color + '"><span class="transport-icon-guide-symbol">' + transportIcon(transport) + '</span><span>' + visual.name + '</span></span>';
+  }).join("");
 }
 function normalizeTransport(t) {
   var n = String(t || "").trim();
