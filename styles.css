@@ -456,7 +456,6 @@ p {
 }
 
 .map-content {
-  transform-origin: center;
   will-change: transform;
 }
 
@@ -501,11 +500,11 @@ p {
 
 .city-labels text {
   fill: #805064;
-  font-size: 8px;
+  font-size: var(--city-label-font-size, 4px);
   font-weight: 700;
   paint-order: stroke;
   stroke: rgba(255, 249, 247, 0.96);
-  stroke-width: 3px;
+  stroke-width: var(--city-label-stroke-width, 1px);
   stroke-linejoin: round;
   text-anchor: middle;
   pointer-events: none;
@@ -523,16 +522,14 @@ p {
 }
 
 .route-badge circle {
-  fill: var(--route-color);
+  fill: var(--transport-color);
   stroke: #fff;
   stroke-width: 2.5;
 }
 
-.route-badge svg {
-  width: 17px;
-  height: 17px;
-  fill: #fff;
-  transform: translate(-8.5px, -8.5px);
+.route-badge .route-transport-glyph {
+  color: #fff;
+  fill: currentColor;
 }
 
 .city-marker > circle:first-child {
@@ -606,7 +603,8 @@ p {
 .amap-route-badge svg {
   width: 14px;
   height: 14px;
-  fill: #fff;
+  color: #fff;
+  fill: currentColor;
 }
 
 .map-overlay {
@@ -702,11 +700,17 @@ p {
   line-height: 1.5;
 }
 
-.legend-segment-icon {
+.map-route-list .legend-segment-icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   margin-right: 5px;
+  border: 1px solid color-mix(in srgb, var(--transport-color) 28%, transparent);
+  border-radius: 6px;
+  color: var(--transport-color);
+  background: color-mix(in srgb, var(--transport-color) 12%, white);
   vertical-align: -4px;
 }
 
@@ -714,6 +718,51 @@ p {
 .route-summary svg {
   width: 16px;
   height: 16px;
+  fill: currentColor;
+}
+
+.transport-icon-guide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px;
+  border: 1px solid rgba(128, 80, 100, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.transport-icon-guide-title {
+  margin-right: 3px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.transport-icon-guide-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--transport-color);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.transport-icon-guide-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--transport-color);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--transport-color) 26%, transparent);
+}
+
+.transport-icon-guide-symbol svg {
+  width: 18px;
+  height: 18px;
   fill: currentColor;
 }
 
@@ -863,14 +912,15 @@ p {
 
 .mini-plan {
   display: grid;
-  grid-template-columns: 74px 1fr;
+  grid-template-columns: minmax(168px, 190px) 1fr;
   gap: 14px;
   padding: 18px;
 }
 
 .date-pill {
-  width: 58px;
-  height: 58px;
+  min-height: 58px;
+  padding: 10px 14px;
+  text-align: center;
 }
 
 .route-summary {
@@ -1229,6 +1279,12 @@ form {
   gap: 14px;
 }
 
+.date-range-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .plan-fields {
   display: block;
 }
@@ -1393,7 +1449,8 @@ textarea {
   }
 
   .mini-plan,
-  .timeline-item {
+  .timeline-item,
+  .date-range-fields {
     grid-template-columns: 1fr;
   }
 
