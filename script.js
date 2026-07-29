@@ -51,6 +51,7 @@ const provinceNames = {
 const state = {
   client: null, backendReady: false,
   plans: [], records: [], todos: [], photos: [], todoPage: 1,
+  snapshotStore: null,
 };
 
 // DOM refs
@@ -126,6 +127,8 @@ window.addEventListener("resize", scheduleMapView);
 
 async function init() {
   bindEvents();
+  connectSnapshotStore();
+  loadCachedData();
   renderAll();
   connectSupabase();
   await loadRemoteData();
@@ -257,11 +260,36 @@ document.addEventListener("click", function(e) {
 });
 
 // ========== Supabase ==========
+function connectSnapshotStore() {
+  state.snapshotStore = window.CloudDataClient.createSnapshotStore(window.localStorage, "dating-web:data:v1");
+}
+
+function loadCachedData() {
+  if (!state.snapshotStore) return;
+  var snapshot = state.snapshotStore.load();
+  state.plans = snapshot.plans;
+  state.records = snapshot.records;
+  state.todos = snapshot.todos;
+  state.photos = snapshot.photos;
+}
+
+function saveCachedData() {
+  if (!state.snapshotStore) return;
+  state.snapshotStore.save({
+    plans: state.plans,
+    records: state.records,
+    todos: state.todos,
+    photos: state.photos,
+  });
+}
+
 function connectSupabase() {
   try {
-    state.client = supabase.createClient(supabaseConfig.url, supabaseConfig.key);
+    state.client = window.CloudDataClient.createCloudDataClient({
+      url: supabaseConfig.url,
+      key: supabaseConfig.key,
+    });
     state.backendReady = true;
-    setCloudStatus("connected");
   } catch (err) {
     state.backendReady = false;
     setCloudStatus("offline");
@@ -269,7 +297,11 @@ function connectSupabase() {
 }
 function setCloudStatus(status) {
   if (!cloudStatus) return;
-  var map = { connected: "☁️ 云端已连接", offline: "⚠️ 离线模式（数据仅保存在本地）", loading: "⏳ 同步中..." };
+  var map = {
+    connected: "☁️ 云端已连接",
+    offline: "⚠️ 云端暂不可用，正在显示本机保存的数据",
+    loading: "⏳ 正在同步云端数据...",
+  };
   cloudStatus.textContent = map[status] || "";
   clearTimeout(cloudStatusTimer);
   if (status === "connected") cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 4000);
@@ -278,21 +310,32 @@ function setCloudStatus(status) {
 async function loadRemoteData() {
   if (!state.backendReady) return;
   setCloudStatus("loading");
-  await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
+  var results = await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
   renderAll();
-  setCloudStatus("connected");
+  var failed = results.some(function(result) { return result.status === "rejected"; });
+  if (failed) {
+    state.backendReady = false;
+    setCloudStatus("offline");
+  } else {
+    setCloudStatus("connected");
+  }
 }
 
 // ========== Plans ==========
 async function fetchPlans() {
-  var r = await state.client.from(tables.plans).select("*").order("created_at", { ascending: false });
-  if (r.data) state.plans = r.data;
+  state.plans = await state.client.select(tables.plans);
 }
 async function savePlan(entry) {
   entry.created_at = new Date().toISOString();
   if (state.backendReady) {
-    await state.client.from(tables.plans).insert([entry]);
-    await fetchPlans();
+    try {
+      await state.client.insert(tables.plans, [entry]);
+      await fetchPlans();
+    } catch (_) {
+      state.backendReady = false;
+      state.plans.unshift(entry);
+      setCloudStatus("offline");
+    }
   } else {
     state.plans.unshift(entry);
   }
@@ -302,7 +345,12 @@ async function deletePlan(index) {
   var plan = state.plans[index];
   if (!plan) return;
   if (state.backendReady && plan.id) {
-    await state.client.from(tables.plans).delete().eq("id", plan.id);
+    try {
+      await state.client.remove(tables.plans, plan.id);
+    } catch (_) {
+      state.backendReady = false;
+      setCloudStatus("offline");
+    }
   }
   state.plans.splice(index, 1);
   renderAll();
@@ -310,14 +358,19 @@ async function deletePlan(index) {
 
 // ========== Records ==========
 async function fetchRecords() {
-  var r = await state.client.from(tables.records).select("*").order("created_at", { ascending: false });
-  if (r.data) state.records = r.data;
+  state.records = await state.client.select(tables.records);
 }
 async function saveRecord(entry) {
   entry.created_at = new Date().toISOString();
   if (state.backendReady) {
-    await state.client.from(tables.records).insert([entry]);
-    await fetchRecords();
+    try {
+      await state.client.insert(tables.records, [entry]);
+      await fetchRecords();
+    } catch (_) {
+      state.backendReady = false;
+      state.records.unshift(entry);
+      setCloudStatus("offline");
+    }
   } else {
     state.records.unshift(entry);
   }
@@ -326,14 +379,19 @@ async function saveRecord(entry) {
 
 // ========== Todos ==========
 async function fetchTodos() {
-  var r = await state.client.from(tables.todos).select("*").order("created_at", { ascending: false });
-  if (r.data) state.todos = r.data;
+  state.todos = await state.client.select(tables.todos);
 }
 async function saveTodo(text) {
   var entry = { text: text, done: false, created_at: new Date().toISOString() };
   if (state.backendReady) {
-    await state.client.from(tables.todos).insert([entry]);
-    await fetchTodos();
+    try {
+      await state.client.insert(tables.todos, [entry]);
+      await fetchTodos();
+    } catch (_) {
+      state.backendReady = false;
+      state.todos.unshift(entry);
+      setCloudStatus("offline");
+    }
   } else {
     state.todos.unshift(entry);
   }
@@ -344,16 +402,30 @@ async function toggleTodo(index) {
   if (!todo) return;
   todo.done = !todo.done;
   if (state.backendReady && todo.id) {
-    await state.client.from(tables.todos).update({ done: todo.done }).eq("id", todo.id);
+    try {
+      await state.client.update(tables.todos, todo.id, { done: todo.done });
+    } catch (_) {
+      state.backendReady = false;
+      setCloudStatus("offline");
+    }
   }
   renderAll();
 }
 
 // ========== Photos ==========
 async function fetchPhotos() {
-  var r = await state.client.from(tables.photos).select("*").order("created_at", { ascending: false });
-  if (r.data) state.photos = r.data;
+  state.photos = await state.client.select(tables.photos);
 }
+
+function fileToDataUrl(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = function() { reject(reader.error); };
+    reader.readAsDataURL(file);
+  });
+}
+
 async function uploadPhotos(files) {
   if (!files || !files.length) return;
   var city = photoCityInput ? photoCityInput.value.trim() : "";
@@ -361,16 +433,21 @@ async function uploadPhotos(files) {
     var file = files[i];
     var entry = { name: file.name, created_at: new Date().toISOString() };
     if (state.backendReady) {
-      var resolvedCity = resolveCity(city);
-      var folder = resolvedCity ? resolvedCity.name : "unplaced";
-      var path = folder + "/" + Date.now() + "-" + file.name;
-      await state.client.storage.from(storageBucket).upload(path, file);
-      var url = state.client.storage.from(storageBucket).getPublicUrl(path).data.publicUrl;
-      entry.path = path;
-      entry.url = url;
-      await state.client.from(tables.photos).insert([entry]);
+      try {
+        var resolvedCity = resolveCity(city);
+        var folder = resolvedCity ? resolvedCity.name : "unplaced";
+        var path = folder + "/" + Date.now() + "-" + file.name;
+        await state.client.upload(storageBucket, path, file);
+        entry.path = path;
+        entry.url = state.client.getPublicUrl(storageBucket, path);
+        await state.client.insert(tables.photos, [entry]);
+      } catch (_) {
+        state.backendReady = false;
+        entry.url = await fileToDataUrl(file);
+        setCloudStatus("offline");
+      }
     } else {
-      entry.url = URL.createObjectURL(file);
+      entry.url = await fileToDataUrl(file);
     }
     state.photos.unshift(entry);
   }
@@ -386,6 +463,7 @@ function renderAll() {
   renderPhotos();
   renderAnniversary();
   renderFootprintMap();
+  saveCachedData();
 }
 
 // ========== Anniversary ==========
@@ -445,19 +523,31 @@ function renderTodos() {
   var list = document.querySelector("#todo-list");
   if (!list) return;
   var total = state.todos.length;
+  var done = state.todos.filter(function(todo) { return todo.done; }).length;
+  var totalCount = document.querySelector("#todo-total-count");
+  var doneCount = document.querySelector("#todo-done-count");
+  if (totalCount) totalCount.textContent = total;
+  if (doneCount) doneCount.textContent = done;
   var max = todoPageSize;
   var pageCount = Math.max(1, Math.ceil(total / max));
   state.todoPage = Math.min(Math.max(1, state.todoPage), pageCount);
   var start = (state.todoPage - 1) * max;
   var todos = state.todos.slice(start, start + max);
   if (!todos.length) {
-    list.innerHTML = '<p>还没有想做的事。</p><span>从上面的输入框开始添加。</span>';
+    list.innerHTML = '<div class="todo-empty"><p>还没有想做的事。</p><span>从上面的输入框开始添加。</span></div>';
     return;
   }
-  list.innerHTML = todos.map(function(t, i) {
-    return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span>' + escapeHtml(t.text) +
-      '</span><button data-toggle-todo="' + (start + i) + '">' + (t.done ? '↩' : '✓') + '</button></div>';
-  }).join("");
+  var splitIndex = Math.ceil(todos.length / 2);
+  var todoColumns = [todos.slice(0, splitIndex), todos.slice(splitIndex)];
+  list.innerHTML = '<div class="todo-items-grid">' + todoColumns.map(function(column, columnIndex) {
+    return '<div class="todo-column">' + column.map(function(t, columnItemIndex) {
+      var i = columnIndex === 0 ? columnItemIndex : splitIndex + columnItemIndex;
+      var action = t.done ? '标记为未完成' : '标记为已完成';
+      return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span>' + escapeHtml(t.text) +
+        '</span><button type="button" aria-label="' + action + '：' + escapeHtml(t.text) + '" data-toggle-todo="' +
+        (start + i) + '">' + (t.done ? '✓' : '') + '</button></div>';
+    }).join("") + '</div>';
+  }).join("") + '</div>';
   if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';
   list.querySelectorAll("[data-toggle-todo]").forEach(function(btn) {
     btn.addEventListener("click", function() { toggleTodo(parseInt(btn.dataset.toggleTodo)); });

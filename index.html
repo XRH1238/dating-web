@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20260718-3" />
+    <link rel="stylesheet" href="styles.css?v=20260729-1" />
   </head>
   <body>
     <header class="site-header">
@@ -26,11 +26,11 @@
     <main id="home">
       <section class="hero">
         <div class="hero-media" aria-hidden="true">
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1800&q=85'); --slide-index: 0"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1800&q=85'); --slide-index: 1"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85'); --slide-index: 2"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=1800&q=85'); --slide-index: 3"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1800&q=85'); --slide-index: 4"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92'); --slide-index: 0"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2400&q=92'); --slide-index: 1"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=2400&q=92'); --slide-index: 2"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=2400&q=92'); --slide-index: 3"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=2400&q=92'); --slide-index: 4"></span>
         </div>
         <div class="hero-content">
           <p class="eyebrow">For us, every road has a date</p>
@@ -156,23 +156,33 @@
         </div>
       </section>
 
-      <section class="section split-section" id="todo">
-        <div>
-          <span class="section-label">Together List</span>
-          <h2>一起想做的事</h2>
-          <p class="muted">
-            不只限于旅行，也可以写吃一顿饭、看一场电影、拍一组照片，或者任何想一起完成的小事。
-          </p>
+      <section class="section todo-workspace" id="todo">
+        <div class="todo-workspace-header">
+          <div>
+            <span class="section-label">Together List</span>
+            <h2>一起想做的事</h2>
+            <p class="muted">
+              不只限于旅行，也可以写吃一顿饭、看一场电影、拍一组照片，或者任何想一起完成的小事。
+            </p>
+          </div>
+          <div class="todo-summary" aria-label="想做的事统计">
+            <span><strong id="todo-total-count">0</strong> 个愿望</span>
+            <i aria-hidden="true">·</i>
+            <span>已完成 <strong id="todo-done-count">0</strong> 个</span>
+          </div>
         </div>
         <div class="todo-board">
           <form class="inline-form" id="todo-form">
-            <label class="sr-only" for="todo-input">添加想做的事</label>
+            <label class="sr-only" for="todo-input">写下一件想一起做的事</label>
             <input id="todo-input" name="todo" type="text" placeholder="写下一件想一起做的事" required />
             <button class="button primary" type="submit">添加</button>
           </form>
-          <div class="todo-list empty-state" id="todo-list">
-            <p>还没有想做的事。</p>
-            <span>从上面的输入框开始添加。</span>
+          <p class="todo-note">一起把日常，过成回忆。</p>
+          <div class="todo-list" id="todo-list" aria-live="polite">
+            <div class="todo-empty">
+              <p>还没有想做的事。</p>
+              <span>从上面的输入框开始添加。</span>
+            </div>
           </div>
         </div>
       </section>
@@ -243,11 +253,11 @@
       <p>Made for our little trips. 下一版可以继续开发登录、云端保存、地图路线和纪念日提醒。</p>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="cloud-data-client.js?v=20260729-2"></script>
     <script src="china-counties-data.js"></script>
     <script src="china-cities-data.js"></script>
     <script src="china-provinces-data.js"></script>
     <script src="map-label-layout.js?v=20260718-1"></script>
-    <script src="script.js?v=20260718-3"></script>
+    <script src="script.js?v=20260729-2"></script>
   </body>
 </html>
