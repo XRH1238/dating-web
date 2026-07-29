@@ -157,9 +157,12 @@ a {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background:
-    linear-gradient(90deg, rgba(47, 39, 48, 0.78), rgba(47, 39, 48, 0.32) 54%, rgba(47, 39, 48, 0.1)),
-    linear-gradient(180deg, rgba(47, 39, 48, 0.1), rgba(47, 39, 48, 0.24));
+  background: linear-gradient(
+    90deg,
+    rgba(47, 39, 48, 0.44) 0%,
+    rgba(47, 39, 48, 0.26) 34%,
+    transparent 64%
+  );
 }
 
 .hero-media span {
@@ -167,7 +170,7 @@ a {
   inset: 0;
   background: var(--hero-image) center/cover no-repeat;
   opacity: 0;
-  transform: scale(1.04);
+  transform: scale(1.01);
   animation: heroSlide 30s infinite;
   animation-delay: calc(var(--slide-index) * 6s);
 }
@@ -175,7 +178,7 @@ a {
 @keyframes heroSlide {
   0% {
     opacity: 0;
-    transform: scale(1.04);
+    transform: scale(1.01);
   }
 
   5%,
@@ -186,7 +189,7 @@ a {
   25%,
   100% {
     opacity: 0;
-    transform: scale(1.12);
+    transform: scale(1.045);
   }
 }
 
@@ -991,6 +994,172 @@ p {
   gap: 12px;
 }
 
+.todo-workspace {
+  display: block;
+  background: rgba(255, 250, 242, 0.62);
+}
+
+.todo-workspace-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 36px;
+  align-items: end;
+  margin-bottom: 28px;
+}
+
+.todo-workspace-header .muted {
+  max-width: 720px;
+  margin-bottom: 0;
+}
+
+.todo-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.todo-summary strong {
+  color: var(--rose);
+  font-size: 30px;
+}
+
+.todo-summary i {
+  color: var(--line);
+  font-style: normal;
+}
+
+.todo-workspace .todo-board {
+  gap: 0;
+  padding: 30px clamp(20px, 3vw, 38px) 26px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.todo-workspace .inline-form {
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 220px);
+}
+
+.todo-workspace .inline-form .button {
+  width: 100%;
+}
+
+.todo-note {
+  position: relative;
+  margin: 24px 0 18px;
+  color: var(--rose);
+  font-family: "STKaiti", "KaiTi", serif;
+  font-size: 17px;
+  text-align: center;
+}
+
+.todo-note::before,
+.todo-note::after {
+  content: "";
+  display: inline-block;
+  width: min(20vw, 240px);
+  margin: 0 18px 5px;
+  border-top: 1px dashed rgba(217, 95, 120, 0.28);
+}
+
+.todo-list {
+  display: block;
+}
+
+.todo-items-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 42px;
+}
+
+.todo-items-grid::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 1px solid var(--line);
+}
+
+.todo-column {
+  display: grid;
+  align-content: start;
+}
+
+.todo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 18px;
+  min-height: 62px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.todo-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.todo-row.done > span {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.todo-row button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(117, 104, 114, 0.7);
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.todo-row.done button {
+  color: #fff;
+  background: var(--rose);
+  border-color: var(--rose);
+}
+
+.todo-row button:hover,
+.todo-row button:focus-visible {
+  border-color: var(--rose);
+  color: var(--rose-dark);
+  outline: 2px solid rgba(217, 95, 120, 0.2);
+  outline-offset: 2px;
+}
+
+.todo-row.done button:hover,
+.todo-row.done button:focus-visible {
+  color: #fff;
+}
+
+.todo-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.todo-empty p {
+  margin-bottom: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
 .todo-page-items {
   display: grid;
   gap: 12px;
@@ -1074,6 +1243,7 @@ p {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 6px;
+  padding-top: 18px;
 }
 
 .todo-pagination button {
@@ -1416,6 +1586,15 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .todo-workspace-header {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .todo-workspace .inline-form {
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 180px);
+  }
+
   .feature-grid,
   .gallery-grid {
     grid-template-columns: 1fr;
@@ -1432,6 +1611,23 @@ textarea {
   .photo-card img,
   .photo-card:nth-child(3n + 2) img {
     height: 260px;
+  }
+}
+
+@media (max-width: 760px) {
+  .todo-workspace .inline-form,
+  .todo-items-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .todo-items-grid::after {
+    display: none;
+  }
+
+  .todo-note::before,
+  .todo-note::after {
+    width: 12vw;
+    margin-inline: 10px;
   }
 }
 
