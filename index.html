@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20260729-1" />
+    <link rel="stylesheet" href="styles.css?v=20260730-4" />
   </head>
   <body>
     <header class="site-header">
@@ -158,17 +158,27 @@
 
       <section class="section todo-workspace" id="todo">
         <div class="todo-workspace-header">
-          <div>
-            <span class="section-label">Together List</span>
-            <h2>一起想做的事</h2>
+          <div class="todo-heading">
+            <span class="todo-kicker">Together List</span>
+            <div class="todo-title-line">
+              <span class="todo-heading-icon" aria-hidden="true"><img src="assets/icons/heart-outline.svg" alt="" /></span>
+              <h2>一起想做的事</h2>
+            </div>
             <p class="muted">
               不只限于旅行，也可以写吃一顿饭、看一场电影、拍一组照片，或者任何想一起完成的小事。
             </p>
           </div>
-          <div class="todo-summary" aria-label="想做的事统计">
-            <span><strong id="todo-total-count">0</strong> 个愿望</span>
-            <i aria-hidden="true">·</i>
-            <span>已完成 <strong id="todo-done-count">0</strong> 个</span>
+          <div class="todo-overview">
+            <div class="todo-summary" aria-label="想做的事统计">
+              <span><strong id="todo-total-count">0</strong> 个愿望</span>
+              <i aria-hidden="true">·</i>
+              <span>已完成 <strong id="todo-done-count">0</strong> 个</span>
+            </div>
+            <div class="todo-filters" role="group" aria-label="筛选想做的事">
+              <button class="todo-filter" type="button" data-todo-filter="all" aria-pressed="true">全部</button>
+              <button class="todo-filter" type="button" data-todo-filter="pending" aria-pressed="false">未完成</button>
+              <button class="todo-filter" type="button" data-todo-filter="done" aria-pressed="false">已完成</button>
+            </div>
           </div>
         </div>
         <div class="todo-board">
@@ -177,7 +187,7 @@
             <input id="todo-input" name="todo" type="text" placeholder="写下一件想一起做的事" required />
             <button class="button primary" type="submit">添加</button>
           </form>
-          <p class="todo-note">一起把日常，过成回忆。</p>
+          <p class="todo-note"><span>一起把日常，过成回忆。</span><img class="todo-note-heart" src="assets/icons/heart-outline.svg" alt="" aria-hidden="true" /></p>
           <div class="todo-list" id="todo-list" aria-live="polite">
             <div class="todo-empty">
               <p>还没有想做的事。</p>
@@ -258,6 +268,6 @@
     <script src="china-cities-data.js"></script>
     <script src="china-provinces-data.js"></script>
     <script src="map-label-layout.js?v=20260718-1"></script>
-    <script src="script.js?v=20260729-2"></script>
+    <script src="script.js?v=20260730-3"></script>
   </body>
 </html>
