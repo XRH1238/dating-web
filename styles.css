@@ -996,15 +996,54 @@ p {
 
 .todo-workspace {
   display: block;
-  background: rgba(255, 250, 242, 0.62);
+  scroll-margin-top: 132px;
+  background: rgba(255, 252, 247, 0.92);
+  border-top: 1px solid rgba(76, 48, 59, 0.08);
 }
 
 .todo-workspace-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 36px;
-  align-items: end;
-  margin-bottom: 28px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  gap: clamp(42px, 7vw, 96px);
+  align-items: start;
+  margin-bottom: 34px;
+}
+
+.todo-heading h2 {
+  margin-bottom: 0;
+}
+
+.todo-title-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.todo-heading-icon {
+  display: grid;
+  width: 36px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid rgba(217, 95, 120, 0.78);
+  border-radius: 5px;
+  transform: rotate(-2deg);
+}
+
+.todo-heading-icon img {
+  width: 21px;
+  height: 21px;
+}
+
+.todo-kicker {
+  display: inline-flex;
+  margin-bottom: 8px;
+  color: var(--rose);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .todo-workspace-header .muted {
@@ -1016,7 +1055,7 @@ p {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding-bottom: 4px;
+  padding-bottom: 14px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -1026,6 +1065,45 @@ p {
   font-size: 30px;
 }
 
+.todo-overview {
+  display: grid;
+  justify-items: end;
+}
+
+.todo-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.todo-filter {
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.46);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.todo-filter:hover,
+.todo-filter:focus-visible,
+.todo-filter[aria-pressed="true"] {
+  border-color: rgba(217, 95, 120, 0.58);
+  color: var(--rose-dark);
+  background: rgba(255, 240, 243, 0.62);
+}
+
+.todo-filter:focus-visible {
+  outline: 2px solid rgba(217, 95, 120, 0.2);
+  outline-offset: 2px;
+}
+
 .todo-summary i {
   color: var(--line);
   font-style: normal;
@@ -1033,10 +1111,10 @@ p {
 
 .todo-workspace .todo-board {
   gap: 0;
-  padding: 30px clamp(20px, 3vw, 38px) 26px;
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .todo-workspace .inline-form {
@@ -1049,20 +1127,36 @@ p {
 
 .todo-note {
   position: relative;
-  margin: 24px 0 18px;
-  color: var(--rose);
-  font-family: "STKaiti", "KaiTi", serif;
-  font-size: 17px;
+  display: grid;
+  grid-template-columns: minmax(32px, 1fr) auto auto minmax(32px, 1fr);
+  align-items: center;
+  gap: clamp(14px, 2vw, 26px);
+  margin: 36px 0 20px;
   text-align: center;
 }
 
 .todo-note::before,
 .todo-note::after {
   content: "";
-  display: inline-block;
-  width: min(20vw, 240px);
-  margin: 0 18px 5px;
+  width: 100%;
   border-top: 1px dashed rgba(217, 95, 120, 0.28);
+}
+
+.todo-note span {
+  color: var(--rose);
+  font-family: "STXingkai", "Xingkai SC", "STKaiti", "KaiTi", cursive;
+  font-size: clamp(17px, 1.55vw, 22px);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  -webkit-text-stroke: 0.25px currentColor;
+  transform: rotate(-2deg);
+}
+
+.todo-note-heart {
+  width: 42px;
+  height: 42px;
+  margin-left: -8px;
+  transform: rotate(9deg);
 }
 
 .todo-list {
@@ -1073,7 +1167,7 @@ p {
   position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 42px;
+  column-gap: clamp(48px, 7vw, 92px);
 }
 
 .todo-items-grid::after {
@@ -1092,10 +1186,10 @@ p {
 
 .todo-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) 42px;
   align-items: center;
   gap: 18px;
-  min-height: 62px;
+  min-height: 66px;
   border-bottom: 1px solid var(--line);
   color: var(--ink);
 }
@@ -1112,8 +1206,9 @@ p {
 
 .todo-row button {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
+  justify-self: end;
   padding: 0;
   place-items: center;
   border: 1px solid rgba(117, 104, 114, 0.7);
@@ -1591,6 +1686,14 @@ textarea {
     gap: 18px;
   }
 
+  .todo-overview {
+    justify-items: start;
+  }
+
+  .todo-filters {
+    justify-content: flex-start;
+  }
+
   .todo-workspace .inline-form {
     grid-template-columns: minmax(0, 1fr) minmax(120px, 180px);
   }
@@ -1628,6 +1731,12 @@ textarea {
   .todo-note::after {
     width: 12vw;
     margin-inline: 10px;
+  }
+
+  .todo-note-heart {
+    width: 34px;
+    height: 34px;
+    margin-left: -8px;
   }
 }
 
