@@ -50,7 +50,7 @@ const provinceNames = {
 // State
 const state = {
   client: null, backendReady: false,
-  plans: [], records: [], todos: [], photos: [], todoPage: 1,
+  plans: [], records: [], todos: [], photos: [], todoPage: 1, todoFilter: "all",
   snapshotStore: null,
 };
 
@@ -187,6 +187,13 @@ function bindEvents() {
       input.value = "";
     });
   }
+  document.querySelectorAll("[data-todo-filter]").forEach(function(button) {
+    button.addEventListener("click", function() {
+      state.todoFilter = button.dataset.todoFilter;
+      state.todoPage = 1;
+      renderTodos();
+    });
+  });
   if (photoInput) {
     photoInput.addEventListener("change", function() { uploadPhotos(this.files); });
   }
@@ -528,24 +535,36 @@ function renderTodos() {
   var doneCount = document.querySelector("#todo-done-count");
   if (totalCount) totalCount.textContent = total;
   if (doneCount) doneCount.textContent = done;
+  document.querySelectorAll("[data-todo-filter]").forEach(function(button) {
+    button.setAttribute("aria-pressed", String(button.dataset.todoFilter === state.todoFilter));
+  });
+  var filteredTodos = state.todos.map(function(todo, index) {
+    return { todo: todo, index: index };
+  }).filter(function(entry) {
+    if (state.todoFilter === "pending") return !entry.todo.done;
+    if (state.todoFilter === "done") return entry.todo.done;
+    return true;
+  });
   var max = todoPageSize;
-  var pageCount = Math.max(1, Math.ceil(total / max));
+  var pageCount = Math.max(1, Math.ceil(filteredTodos.length / max));
   state.todoPage = Math.min(Math.max(1, state.todoPage), pageCount);
   var start = (state.todoPage - 1) * max;
-  var todos = state.todos.slice(start, start + max);
+  var todos = filteredTodos.slice(start, start + max);
   if (!todos.length) {
-    list.innerHTML = '<div class="todo-empty"><p>还没有想做的事。</p><span>从上面的输入框开始添加。</span></div>';
+    var emptyTitle = state.todoFilter === "done" ? "还没有已完成的愿望。" : state.todoFilter === "pending" ? "所有愿望都完成啦。" : "还没有想做的事。";
+    var emptyHint = state.todoFilter === "all" ? "从上面的输入框开始添加。" : "切换筛选条件查看其他愿望。";
+    list.innerHTML = '<div class="todo-empty"><p>' + emptyTitle + '</p><span>' + emptyHint + '</span></div>';
     return;
   }
   var splitIndex = Math.ceil(todos.length / 2);
   var todoColumns = [todos.slice(0, splitIndex), todos.slice(splitIndex)];
-  list.innerHTML = '<div class="todo-items-grid">' + todoColumns.map(function(column, columnIndex) {
-    return '<div class="todo-column">' + column.map(function(t, columnItemIndex) {
-      var i = columnIndex === 0 ? columnItemIndex : splitIndex + columnItemIndex;
+  list.innerHTML = '<div class="todo-items-grid">' + todoColumns.map(function(column) {
+    return '<div class="todo-column">' + column.map(function(entry) {
+      var t = entry.todo;
       var action = t.done ? '标记为未完成' : '标记为已完成';
       return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span>' + escapeHtml(t.text) +
         '</span><button type="button" aria-label="' + action + '：' + escapeHtml(t.text) + '" data-toggle-todo="' +
-        (start + i) + '">' + (t.done ? '✓' : '') + '</button></div>';
+        entry.index + '">' + (t.done ? '✓' : '') + '</button></div>';
     }).join("") + '</div>';
   }).join("") + '</div>';
   if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';
