@@ -88,3 +88,6 @@ using (bucket_id = 'love-photos');
 ```
 
 如果以后要做成只有你和女朋友能编辑，下一步应该加 Supabase Auth 登录，再把这些 `public` 策略改成只允许指定用户读写。
+## 故事时间轴与时间胶囊升级
+
+新版“出游记录”需要额外字段和 `love_capsules` 表。发布前先征得站点所有者同意，再在 Supabase SQL Editor 执行 [`supabase/story-timeline-capsule.sql`](supabase/story-timeline-capsule.sql)。迁移是增量式的，不会删除原有记录。

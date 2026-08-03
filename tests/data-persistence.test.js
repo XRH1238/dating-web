@@ -17,7 +17,7 @@ test('页面使用本地云端客户端，不再依赖第三方 Supabase CDN', (
   assert.match(html, /<script src="cloud-data-client\.js\?v=[^"]+"><\/script>/);
 });
 
-test('本地快照可以保存并恢复四类网站数据', () => {
+test('本地快照可以保存并恢复五类网站数据', () => {
   assert.equal(typeof dataModule.createSnapshotStore, 'function');
   const values = new Map();
   const storage = {
@@ -30,6 +30,7 @@ test('本地快照可以保存并恢复四类网站数据', () => {
     records: [{ id: 2 }],
     todos: [{ id: 3, text: '看日落' }],
     photos: [{ id: 4 }],
+    capsules: [{ id: 5 }],
   };
   store.save(snapshot);
   assert.deepEqual(store.load(), snapshot);
@@ -42,7 +43,13 @@ test('损坏的本地快照不会阻止页面启动', () => {
     setItem() {},
   };
   const store = dataModule.createSnapshotStore(storage, 'dating-web:test');
-  assert.deepEqual(store.load(), { plans: [], records: [], todos: [], photos: [] });
+  assert.deepEqual(store.load(), { plans: [], records: [], todos: [], photos: [], capsules: [] });
+});
+
+test('旧版四类快照升级时会补上空的时间胶囊', () => {
+  const storage = { getItem() { return JSON.stringify({ plans: [1], records: [2], todos: [3], photos: [4] }); }, setItem() {} };
+  const store = dataModule.createSnapshotStore(storage, 'dating-web:test');
+  assert.deepEqual(store.load().capsules, []);
 });
 
 test('轻量云端客户端能直接读取 Supabase REST 表', async () => {
