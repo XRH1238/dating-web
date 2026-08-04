@@ -56,9 +56,14 @@ test('SVG 地图内容只由 transform 属性决定缩放中心', () => {
   );
 });
 
-test('计划和记录共享开始日期与结束日期原生输入', () => {
-  assert.match(html, /name="start_date"\s+type="date"/);
-  assert.match(html, /name="end_date"\s+type="date"/);
+test('计划保留原生日期而记录改用隐藏 ISO 日期', () => {
+  const quickForm = html.match(/<form id="quick-form">([\s\S]*?)<\/form>/)[1];
+  const recordForm = html.match(/<form id="record-form">([\s\S]*?)<\/form>/)[1];
+  assert.match(quickForm, /name="start_date"\s+type="date"/);
+  assert.match(quickForm, /name="end_date"\s+type="date"/);
+  assert.doesNotMatch(recordForm, /type="date"/);
+  assert.match(recordForm, /name="start_date"\s+type="hidden"/);
+  assert.match(recordForm, /name="end_date"\s+type="hidden"/);
   assert.doesNotMatch(html, /name="date"\s+type="text"/);
 });
 

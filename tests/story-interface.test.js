@@ -14,6 +14,18 @@ test('记录拥有独立的完整表单和预览', () => {
   assert.match(html, /id="record-photo-preview"/);
 });
 
+test('记录日期使用中文摘要、手动年月日和共享日历', () => {
+  const recordForm = html.match(/<form id="record-form">([\s\S]*?)<\/form>/)[1];
+  assert.doesNotMatch(recordForm, /type="date"/);
+  assert.match(recordForm, /name="start_date" type="hidden"/);
+  assert.match(recordForm, /name="end_date" type="hidden"/);
+  assert.match(recordForm, />选择开始日期</);
+  assert.match(recordForm, />选择结束日期</);
+  ['year', 'month', 'day'].forEach(part => assert.match(recordForm, new RegExp(`data-record-date-part="${part}"[^>]*inputmode="numeric"`)));
+  ['record-date-prev', 'record-date-next', 'record-date-heading', 'record-date-grid', 'record-date-status'].forEach(id => assert.match(recordForm, new RegExp(`id="${id}"`)));
+  assert.match(html, /<script src="record-date-picker\.js[^>]*><\/script>[\s\S]*<script src="script\.js/);
+});
+
 test('时间胶囊拥有独立表单和确认对话框', () => {
   assert.match(html, /id="capsule-panel"/);
   assert.match(html, /id="capsule-form"/);

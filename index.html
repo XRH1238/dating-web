@@ -275,7 +275,33 @@
         <button class="panel-close" type="button" aria-label="关闭记录表单" data-close-panel="record-panel">×</button>
         <span class="section-label">New Memory</span><h2 id="record-panel-title">写一条出游记录</h2>
         <form id="record-form">
-          <div class="date-range-fields"><label>开始日期<input name="start_date" type="date" required /></label><label>结束日期<input name="end_date" type="date" required /></label></div>
+          <div class="record-date-picker" id="record-date-picker">
+            <div class="record-date-summary" role="group" aria-label="行程日期范围">
+              <button class="record-date-summary-button is-active" type="button" data-record-date-target="start" aria-pressed="true"><span>开始日期</span><strong>选择开始日期</strong></button>
+              <span class="record-date-arrow" aria-hidden="true">至</span>
+              <button class="record-date-summary-button" type="button" data-record-date-target="end" aria-pressed="false"><span>结束日期</span><strong>选择结束日期</strong></button>
+            </div>
+            <input name="start_date" type="hidden" />
+            <input name="end_date" type="hidden" />
+            <div class="record-date-manual" role="group" aria-label="手动填写当前日期">
+              <label><span>年</span><input data-record-date-part="year" inputmode="numeric" autocomplete="off" maxlength="4" aria-label="年份" /></label>
+              <span aria-hidden="true">年</span>
+              <label><span>月</span><input data-record-date-part="month" inputmode="numeric" autocomplete="off" maxlength="2" aria-label="月份" /></label>
+              <span aria-hidden="true">月</span>
+              <label><span>日</span><input data-record-date-part="day" inputmode="numeric" autocomplete="off" maxlength="2" aria-label="日期" /></label>
+              <span aria-hidden="true">日</span>
+            </div>
+            <div class="record-calendar" aria-labelledby="record-date-heading">
+              <div class="record-calendar-head">
+                <button id="record-date-prev" type="button" aria-label="上一个月">‹</button>
+                <strong id="record-date-heading">选择日期</strong>
+                <button id="record-date-next" type="button" aria-label="下一个月">›</button>
+              </div>
+              <div class="record-calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+              <div class="record-date-grid" id="record-date-grid" role="grid" aria-label="日期"></div>
+            </div>
+            <p class="record-date-status" id="record-date-status" role="status" aria-live="polite"></p>
+          </div>
           <div class="date-range-fields"><label>城市<input name="city" type="text" placeholder="例如：厦门市" required /></label><label>故事标题<input name="title" type="text" placeholder="例如：海风吹过的下午" required /></label></div>
           <label>这次发生了什么<textarea name="description" rows="5" placeholder="写下最想记住的片段" required></textarea></label>
           <fieldset class="mood-picker"><legend>那天的心情（可多选）</legend><div id="mood-options">
@@ -318,6 +344,7 @@
     <script src="china-cities-data.js"></script>
     <script src="china-provinces-data.js"></script>
     <script src="map-label-layout.js?v=20260718-1"></script>
-    <script src="script.js?v=20260804-1"></script>
+    <script src="record-date-picker.js?v=20260805-1"></script>
+    <script src="script.js?v=20260805-1"></script>
   </body>
 </html>
