@@ -15,3 +15,23 @@ test('记录删除按钮是圆形图标按钮且窄屏改为单列', () => {
   assert.match(css, /\.story-delete\s*\{[^}]*border-radius:\s*50%/s);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.story-layout\s*\{[^}]*grid-template-columns:\s*1fr/s);
 });
+
+test('日期摘要和三段式手动输入拥有清晰的当前状态', () => {
+  assert.match(css, /\.record-date-summary\s*\{[^}]*grid-template-columns/s);
+  assert.match(css, /\.record-date-summary-button\.is-active\s*\{[^}]*border-color:\s*var\(--rose\)/s);
+  assert.match(css, /\.record-date-manual\s*\{[^}]*display:\s*flex/s);
+  assert.match(css, /\.record-date-manual input\s*\{[^}]*text-align:\s*center/s);
+});
+
+test('自定义日历使用七列网格并突出选中日期', () => {
+  assert.match(css, /\.record-calendar-weekdays,[\s\S]*?\.record-date-grid\s*\{[^}]*grid-template-columns:\s*repeat\(7,\s*1fr\)/s);
+  assert.match(css, /\.record-calendar-day\s*\{[^}]*min-height:\s*40px/s);
+  assert.match(css, /\.record-calendar-day\.is-selected\s*\{[^}]*background:\s*var\(--rose\)/s);
+  assert.match(css, /\.record-calendar-day\.is-today/);
+  assert.match(css, /\.record-date-picker\s+button:focus-visible/);
+});
+
+test('窄屏日期摘要与手动输入可以安全换行', () => {
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.record-date-summary\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.record-date-manual\s*\{[^}]*flex-wrap:\s*wrap/s);
+});
