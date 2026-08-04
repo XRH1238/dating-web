@@ -70,8 +70,16 @@ const photoCityInput = document.querySelector("#photo-city");
 const cloudStatus = document.querySelector("#cloud-status");
 const recordPanel = document.querySelector("#record-panel");
 const recordForm = document.querySelector("#record-form");
+const recordDatePicker = document.querySelector("#record-date-picker");
 const capsulePanel = document.querySelector("#capsule-panel");
 const capsuleForm = document.querySelector("#capsule-form");
+const recordDateState = {
+  active: "start",
+  start: { parts: { year: "", month: "", day: "" }, iso: "" },
+  end: { parts: { year: "", month: "", day: "" }, iso: "" },
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth() + 1,
+};
 let recordDraftFiles = [];
 let capsuleDraftFiles = [];
 let capsuleExistingPhotos = [];
@@ -202,7 +210,11 @@ function bindEvents() {
     photoInput.addEventListener("change", function() { uploadPhotos(this.files); });
   }
   var openRecord = document.querySelector("[data-open-record]");
-  if (openRecord) openRecord.addEventListener("click", function() { openPanelById(recordPanel); recordForm.elements.start_date.focus(); });
+  if (openRecord) openRecord.addEventListener("click", function() {
+    openPanelById(recordPanel);
+    var startButton = recordDatePicker && recordDatePicker.querySelector('[data-record-date-target="start"]');
+    if (startButton) startButton.focus();
+  });
   document.querySelectorAll("[data-close-panel]").forEach(function(button) {
     button.addEventListener("click", function() { closePanelById(document.querySelector("#" + button.dataset.closePanel)); });
   });
@@ -222,6 +234,7 @@ function bindEvents() {
   });
   if (recordForm) recordForm.addEventListener("submit", submitRecordForm);
   if (capsuleForm) capsuleForm.addEventListener("submit", submitCapsuleForm);
+  bindRecordDatePicker();
 }
 
 function syncEndDateMinimum() {
@@ -256,6 +269,140 @@ function closePanelById(target) {
   if (!target) return;
   target.classList.remove("is-open");
   target.setAttribute("aria-hidden", "true");
+}
+
+// ========== Record date picker ==========
+function bindRecordDatePicker() {
+  if (!recordDatePicker || !window.RecordDatePicker) return;
+  recordDatePicker.querySelectorAll("[data-record-date-target]").forEach(function(button) {
+    button.addEventListener("click", function() { activateRecordDateTarget(button.dataset.recordDateTarget); });
+  });
+  recordDatePicker.querySelectorAll("[data-record-date-part]").forEach(function(input) {
+    input.addEventListener("input", function() {
+      var cleanValue = input.value.replace(/\D/g, "");
+      if (input.value !== cleanValue) input.value = cleanValue;
+      updateRecordDateFromManual(input.dataset.recordDatePart, cleanValue);
+    });
+  });
+  document.querySelector("#record-date-prev").addEventListener("click", function() { changeRecordCalendarMonth(-1); });
+  document.querySelector("#record-date-next").addEventListener("click", function() { changeRecordCalendarMonth(1); });
+  document.querySelector("#record-date-grid").addEventListener("click", function(event) {
+    var button = event.target.closest("[data-record-calendar-day]");
+    if (button) selectRecordCalendarDay(Number(button.dataset.recordCalendarDay));
+  });
+  renderRecordDatePicker();
+}
+
+function activateRecordDateTarget(target) {
+  if (target !== "start" && target !== "end") return;
+  recordDateState.active = target;
+  var activeEntry = recordDateState[target];
+  var year = Number(activeEntry.parts.year), month = Number(activeEntry.parts.month);
+  if (year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
+    recordDateState.viewYear = year;
+    recordDateState.viewMonth = month;
+  }
+  setRecordDateStatus("");
+  renderRecordDatePicker();
+}
+
+function updateRecordDateFromManual(part, value) {
+  var entry = recordDateState[recordDateState.active];
+  entry.parts[part] = value;
+  var year = Number(entry.parts.year), month = Number(entry.parts.month);
+  if (entry.parts.year && entry.parts.month && year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
+    recordDateState.viewYear = year;
+    recordDateState.viewMonth = month;
+  }
+  var validation = window.RecordDatePicker.validateParts(entry.parts);
+  entry.iso = validation.valid && validation.complete ? window.RecordDatePicker.toIsoDate(entry.parts) : "";
+  setRecordDateStatus(validation.valid ? "" : validation.message);
+  renderRecordDatePicker();
+}
+
+function selectRecordCalendarDay(day) {
+  var entry = recordDateState[recordDateState.active];
+  entry.parts = { year: String(recordDateState.viewYear), month: String(recordDateState.viewMonth), day: String(day) };
+  entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
+  setRecordDateStatus("");
+  renderRecordDatePicker();
+}
+
+function changeRecordCalendarMonth(offset) {
+  var next = window.RecordDatePicker.shiftMonth(recordDateState.viewYear, recordDateState.viewMonth, offset);
+  recordDateState.viewYear = next.year;
+  recordDateState.viewMonth = next.month;
+  renderRecordDatePicker();
+}
+
+function renderRecordDatePicker() {
+  if (!recordDatePicker || !window.RecordDatePicker) return;
+  var activeEntry = recordDateState[recordDateState.active];
+  recordDatePicker.querySelectorAll("[data-record-date-target]").forEach(function(button) {
+    var target = button.dataset.recordDateTarget;
+    var active = target === recordDateState.active;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.querySelector("strong").textContent = window.RecordDatePicker.formatChineseDate(
+      recordDateState[target].iso,
+      target === "start" ? "选择开始日期" : "选择结束日期"
+    );
+  });
+  recordDatePicker.querySelectorAll("[data-record-date-part]").forEach(function(input) {
+    input.value = activeEntry.parts[input.dataset.recordDatePart] || "";
+  });
+  recordForm.elements.start_date.value = recordDateState.start.iso;
+  recordForm.elements.end_date.value = recordDateState.end.iso;
+  document.querySelector("#record-date-heading").textContent = recordDateState.viewYear + " 年 " + recordDateState.viewMonth + " 月";
+  var selectedIso = activeEntry.iso;
+  var today = new Date();
+  var todayIso = window.RecordDatePicker.toIsoDate({ year: String(today.getFullYear()), month: String(today.getMonth() + 1), day: String(today.getDate()) });
+  document.querySelector("#record-date-grid").innerHTML = window.RecordDatePicker.buildMonthGrid(recordDateState.viewYear, recordDateState.viewMonth).map(function(day) {
+    if (!day) return '<span class="record-calendar-empty" aria-hidden="true"></span>';
+    var iso = window.RecordDatePicker.toIsoDate({ year: String(recordDateState.viewYear), month: String(recordDateState.viewMonth), day: String(day) });
+    var classes = "record-calendar-day" + (iso === selectedIso ? " is-selected" : "") + (iso === todayIso ? " is-today" : "");
+    return '<button class="' + classes + '" type="button" role="gridcell" data-record-calendar-day="' + day + '"' + (iso === selectedIso ? ' aria-selected="true"' : '') + '>' + day + '</button>';
+  }).join("");
+}
+
+function setRecordDateStatus(message) {
+  var status = document.querySelector("#record-date-status");
+  if (status) status.textContent = message || "";
+}
+
+function resetRecordDatePicker() {
+  var today = new Date();
+  recordDateState.active = "start";
+  recordDateState.start = { parts: { year: "", month: "", day: "" }, iso: "" };
+  recordDateState.end = { parts: { year: "", month: "", day: "" }, iso: "" };
+  recordDateState.viewYear = today.getFullYear();
+  recordDateState.viewMonth = today.getMonth() + 1;
+  setRecordDateStatus("");
+  renderRecordDatePicker();
+}
+
+function validateRecordDateRange() {
+  var startValidation = window.RecordDatePicker.validateParts(recordDateState.start.parts);
+  var endValidation = window.RecordDatePicker.validateParts(recordDateState.end.parts);
+  if (!startValidation.valid || !startValidation.complete) {
+    activateRecordDateTarget("start");
+    setRecordDateStatus(startValidation.valid ? "请选择完整的开始日期" : startValidation.message);
+    return "";
+  }
+  if (!endValidation.valid || !endValidation.complete) {
+    activateRecordDateTarget("end");
+    setRecordDateStatus(endValidation.valid ? "请选择完整的结束日期" : endValidation.message);
+    return "";
+  }
+  try {
+    var date = window.MapLabelLayout.serializeDateRange(recordDateState.start.iso, recordDateState.end.iso);
+    setRecordDateStatus("");
+    return date;
+  } catch (_) {
+    activateRecordDateTarget("end");
+    setRecordDateStatus("结束日期不能早于开始日期");
+    return "";
+  }
 }
 
 // ========== Route Editor ==========
@@ -451,10 +598,11 @@ async function renderFilePreview(files, selector) {
 async function submitRecordForm(event) {
   event.preventDefault();
   var status = document.querySelector("#record-form-status");
+  var date = validateRecordDateRange();
+  if (!date) return;
   var fd = new FormData(recordForm);
   try {
     status.textContent = "正在保存这段故事...";
-    var date = window.MapLabelLayout.serializeDateRange(fd.get("start_date"), fd.get("end_date"));
     var photos = await uploadStoryFiles(recordDraftFiles, "records");
     var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
       description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: photos,
@@ -463,7 +611,7 @@ async function submitRecordForm(event) {
       await state.client.insert(tables.records, [entry]);
       await fetchRecords();
     } else state.records.unshift(entry);
-    recordForm.reset(); recordDraftFiles = [];
+    recordForm.reset(); resetRecordDatePicker(); recordDraftFiles = [];
     document.querySelector("#record-photo-preview").innerHTML = "";
     status.textContent = ""; closePanelById(recordPanel); renderAll();
   } catch (error) {
