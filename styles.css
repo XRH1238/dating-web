@@ -915,10 +915,37 @@ p {
 
 .mini-plan {
   display: grid;
-  grid-template-columns: minmax(168px, 190px) 1fr;
+  grid-template-columns: minmax(168px, 190px) 1fr auto;
   gap: 14px;
+  align-items: center;
   padding: 18px;
 }
+
+.plan-delete {
+  display: grid;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--rose-dark);
+  background: #fff;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.plan-delete img { width: 18px; height: 18px; }
+
+.plan-delete:hover,
+.plan-delete:focus-visible {
+  border-color: rgba(217, 95, 120, .62);
+  background: var(--blush);
+  transform: translateY(-1px);
+}
+
+.plan-delete:focus-visible { outline: 3px solid rgba(217, 95, 120, .25); outline-offset: 2px; }
 
 .date-pill {
   min-height: 58px;
@@ -1758,6 +1785,8 @@ textarea {
   .date-range-fields {
     grid-template-columns: 1fr;
   }
+
+  .plan-delete { justify-self: end; }
 
   .plan-fields {
     grid-template-columns: 1fr;

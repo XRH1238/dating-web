@@ -538,13 +538,14 @@ async function savePlan(entry) {
 }
 async function deletePlan(index) {
   var plan = state.plans[index];
-  if (!plan) return;
+  if (!plan || !(await confirmAction("确定删除这个出游计划吗？删除后无法恢复。"))) return;
   if (state.backendReady && plan.id) {
     try {
       await state.client.remove(tables.plans, plan.id);
     } catch (_) {
       state.backendReady = false;
       setCloudStatus("offline");
+      return;
     }
   }
   state.plans.splice(index, 1);
@@ -810,7 +811,7 @@ function renderPlans() {
   list.innerHTML = state.plans.map(function(p, i) {
     return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
       '</span><div><h3>' + escapeHtml(p.title || "") + '</h3><p>' + escapeHtml(p.description || "") +
-      '</p></div><button class="delete-btn" data-delete-plan="' + i + '">×</button></article>';
+      '</p></div><button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button></article>';
   }).join("");
   list.querySelectorAll("[data-delete-plan]").forEach(function(btn) {
     btn.addEventListener("click", function() { deletePlan(parseInt(btn.dataset.deletePlan)); });
