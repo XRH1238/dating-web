@@ -4,7 +4,7 @@
   if (root) root.CloudDataClient = api;
 })(typeof window !== "undefined" ? window : globalThis, function() {
   var emptySnapshot = function() {
-    return { plans: [], records: [], todos: [], photos: [] };
+    return { plans: [], records: [], todos: [], photos: [], capsules: [] };
   };
 
   function normalizeSnapshot(value) {

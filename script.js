@@ -3,7 +3,7 @@ const supabaseConfig = {
   url: "https://ueqlgutndwkfuffzkcxo.supabase.co",
   key: "sb_publishable_EplbiVXxWhAdBKKSF70RVQ_pPls9SSw",
 };
-const tables = { plans: "love_plans", records: "love_records", todos: "love_todos", photos: "love_photos" };
+const tables = { plans: "love_plans", records: "love_records", todos: "love_todos", photos: "love_photos", capsules: "love_capsules" };
 const storageBucket = "love-photos";
 const todoPageSize = 10;
 const loveStartDate = "2025-09-06";
@@ -50,7 +50,7 @@ const provinceNames = {
 // State
 const state = {
   client: null, backendReady: false,
-  plans: [], records: [], todos: [], photos: [], todoPage: 1, todoFilter: "all",
+  plans: [], records: [], todos: [], photos: [], capsules: [], todoPage: 1, todoFilter: "all",
   snapshotStore: null,
 };
 
@@ -68,6 +68,22 @@ const todoForm = document.querySelector("#todo-form");
 const photoInput = document.querySelector("#photo-input");
 const photoCityInput = document.querySelector("#photo-city");
 const cloudStatus = document.querySelector("#cloud-status");
+const recordPanel = document.querySelector("#record-panel");
+const recordForm = document.querySelector("#record-form");
+const recordDatePicker = document.querySelector("#record-date-picker");
+const capsulePanel = document.querySelector("#capsule-panel");
+const capsuleForm = document.querySelector("#capsule-form");
+const recordDateState = {
+  active: "start",
+  start: { parts: { year: "", month: "", day: "" }, iso: "" },
+  end: { parts: { year: "", month: "", day: "" }, iso: "" },
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth() + 1,
+};
+let recordDraftFiles = [];
+let capsuleDraftFiles = [];
+let capsuleExistingPhotos = [];
+let editingCapsuleIndex = -1;
 let activeType = "plan";
 let cloudStatusTimer;
 
@@ -137,11 +153,11 @@ async function init() {
 function bindEvents() {
   document.querySelectorAll("[data-open-panel]").forEach(function(btn) {
     btn.addEventListener("click", function() {
-      activeType = btn.dataset.openPanel;
-      panelTitle.textContent = activeType === "plan" ? "添加出游计划" : "写一条出游记录";
-      panelLabel.textContent = activeType === "plan" ? "New Plan" : "New Memory";
-      togglePlanFields(activeType === "plan");
-      if (activeType === "plan") resetRouteEditor();
+      activeType = "plan";
+      panelTitle.textContent = "添加出游计划";
+      panelLabel.textContent = "New Plan";
+      togglePlanFields(true);
+      resetRouteEditor();
       panel.classList.add("is-open");
       panel.setAttribute("aria-hidden", "false");
       form.elements.title.focus();
@@ -166,12 +182,8 @@ function bindEvents() {
       return;
     }
     var entry = { title: fd.get("title").trim(), date: date, description: fd.get("description").trim() };
-    if (activeType === "plan") {
-      entry.segments = getRouteSegments();
-      await savePlan(entry);
-    } else {
-      await saveRecord(entry);
-    }
+    entry.segments = getRouteSegments();
+    await savePlan(entry);
     form.reset();
     endDateInput.min = "";
     closePanel();
@@ -197,6 +209,32 @@ function bindEvents() {
   if (photoInput) {
     photoInput.addEventListener("change", function() { uploadPhotos(this.files); });
   }
+  var openRecord = document.querySelector("[data-open-record]");
+  if (openRecord) openRecord.addEventListener("click", function() {
+    openPanelById(recordPanel);
+    var startButton = recordDatePicker && recordDatePicker.querySelector('[data-record-date-target="start"]');
+    if (startButton) startButton.focus();
+  });
+  document.querySelectorAll("[data-close-panel]").forEach(function(button) {
+    button.addEventListener("click", function() { closePanelById(document.querySelector("#" + button.dataset.closePanel)); });
+  });
+  [recordPanel, capsulePanel].forEach(function(item) {
+    if (item) item.addEventListener("click", function(event) { if (event.target === item) closePanelById(item); });
+  });
+  var recordPhotoInput = document.querySelector("#record-photo-input");
+  if (recordPhotoInput) recordPhotoInput.addEventListener("change", async function() {
+    recordDraftFiles = Array.from(this.files || []).slice(0, 6);
+    await renderFilePreview(recordDraftFiles, "#record-photo-preview");
+  });
+  var capsulePhotoInput = document.querySelector("#capsule-photo-input");
+  if (capsulePhotoInput) capsulePhotoInput.addEventListener("change", async function() {
+    capsuleDraftFiles = Array.from(this.files || []).slice(0, 6);
+    capsuleExistingPhotos = [];
+    await renderFilePreview(capsuleDraftFiles, "#capsule-photo-preview");
+  });
+  if (recordForm) recordForm.addEventListener("submit", submitRecordForm);
+  if (capsuleForm) capsuleForm.addEventListener("submit", submitCapsuleForm);
+  bindRecordDatePicker();
 }
 
 function syncEndDateMinimum() {
@@ -219,6 +257,152 @@ function resetRouteEditor() {
 function closePanel() {
   panel.classList.remove("is-open");
   panel.setAttribute("aria-hidden", "true");
+}
+
+function openPanelById(target) {
+  if (!target) return;
+  target.classList.add("is-open");
+  target.setAttribute("aria-hidden", "false");
+}
+
+function closePanelById(target) {
+  if (!target) return;
+  target.classList.remove("is-open");
+  target.setAttribute("aria-hidden", "true");
+}
+
+// ========== Record date picker ==========
+function bindRecordDatePicker() {
+  if (!recordDatePicker || !window.RecordDatePicker) return;
+  recordDatePicker.querySelectorAll("[data-record-date-target]").forEach(function(button) {
+    button.addEventListener("click", function() { activateRecordDateTarget(button.dataset.recordDateTarget); });
+  });
+  recordDatePicker.querySelectorAll("[data-record-date-part]").forEach(function(input) {
+    input.addEventListener("input", function() {
+      var cleanValue = input.value.replace(/\D/g, "");
+      if (input.value !== cleanValue) input.value = cleanValue;
+      updateRecordDateFromManual(input.dataset.recordDatePart, cleanValue);
+    });
+  });
+  document.querySelector("#record-date-prev").addEventListener("click", function() { changeRecordCalendarMonth(-1); });
+  document.querySelector("#record-date-next").addEventListener("click", function() { changeRecordCalendarMonth(1); });
+  document.querySelector("#record-date-grid").addEventListener("click", function(event) {
+    var button = event.target.closest("[data-record-calendar-day]");
+    if (button) selectRecordCalendarDay(Number(button.dataset.recordCalendarDay));
+  });
+  renderRecordDatePicker();
+}
+
+function activateRecordDateTarget(target) {
+  if (target !== "start" && target !== "end") return;
+  recordDateState.active = target;
+  var activeEntry = recordDateState[target];
+  var year = Number(activeEntry.parts.year), month = Number(activeEntry.parts.month);
+  if (year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
+    recordDateState.viewYear = year;
+    recordDateState.viewMonth = month;
+  }
+  setRecordDateStatus("");
+  renderRecordDatePicker();
+}
+
+function updateRecordDateFromManual(part, value) {
+  var entry = recordDateState[recordDateState.active];
+  entry.parts[part] = value;
+  var year = Number(entry.parts.year), month = Number(entry.parts.month);
+  if (entry.parts.year && entry.parts.month && year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
+    recordDateState.viewYear = year;
+    recordDateState.viewMonth = month;
+  }
+  var validation = window.RecordDatePicker.validateParts(entry.parts);
+  entry.iso = validation.valid && validation.complete ? window.RecordDatePicker.toIsoDate(entry.parts) : "";
+  setRecordDateStatus(validation.valid ? "" : validation.message);
+  renderRecordDatePicker();
+}
+
+function selectRecordCalendarDay(day) {
+  var entry = recordDateState[recordDateState.active];
+  entry.parts = { year: String(recordDateState.viewYear), month: String(recordDateState.viewMonth), day: String(day) };
+  entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
+  setRecordDateStatus("");
+  renderRecordDatePicker();
+}
+
+function changeRecordCalendarMonth(offset) {
+  var next = window.RecordDatePicker.shiftMonth(recordDateState.viewYear, recordDateState.viewMonth, offset);
+  recordDateState.viewYear = next.year;
+  recordDateState.viewMonth = next.month;
+  renderRecordDatePicker();
+}
+
+function renderRecordDatePicker() {
+  if (!recordDatePicker || !window.RecordDatePicker) return;
+  var activeEntry = recordDateState[recordDateState.active];
+  recordDatePicker.querySelectorAll("[data-record-date-target]").forEach(function(button) {
+    var target = button.dataset.recordDateTarget;
+    var active = target === recordDateState.active;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.querySelector("strong").textContent = window.RecordDatePicker.formatChineseDate(
+      recordDateState[target].iso,
+      target === "start" ? "选择开始日期" : "选择结束日期"
+    );
+  });
+  recordDatePicker.querySelectorAll("[data-record-date-part]").forEach(function(input) {
+    input.value = activeEntry.parts[input.dataset.recordDatePart] || "";
+  });
+  recordForm.elements.start_date.value = recordDateState.start.iso;
+  recordForm.elements.end_date.value = recordDateState.end.iso;
+  document.querySelector("#record-date-heading").textContent = recordDateState.viewYear + " 年 " + recordDateState.viewMonth + " 月";
+  var selectedIso = activeEntry.iso;
+  var today = new Date();
+  var todayIso = window.RecordDatePicker.toIsoDate({ year: String(today.getFullYear()), month: String(today.getMonth() + 1), day: String(today.getDate()) });
+  document.querySelector("#record-date-grid").innerHTML = window.RecordDatePicker.buildMonthGrid(recordDateState.viewYear, recordDateState.viewMonth).map(function(day) {
+    if (!day) return '<span class="record-calendar-empty" aria-hidden="true"></span>';
+    var iso = window.RecordDatePicker.toIsoDate({ year: String(recordDateState.viewYear), month: String(recordDateState.viewMonth), day: String(day) });
+    var classes = "record-calendar-day" + (iso === selectedIso ? " is-selected" : "") + (iso === todayIso ? " is-today" : "");
+    return '<button class="' + classes + '" type="button" role="gridcell" data-record-calendar-day="' + day + '"' + (iso === selectedIso ? ' aria-selected="true"' : '') + '>' + day + '</button>';
+  }).join("");
+}
+
+function setRecordDateStatus(message) {
+  var status = document.querySelector("#record-date-status");
+  if (status) status.textContent = message || "";
+}
+
+function resetRecordDatePicker() {
+  var today = new Date();
+  recordDateState.active = "start";
+  recordDateState.start = { parts: { year: "", month: "", day: "" }, iso: "" };
+  recordDateState.end = { parts: { year: "", month: "", day: "" }, iso: "" };
+  recordDateState.viewYear = today.getFullYear();
+  recordDateState.viewMonth = today.getMonth() + 1;
+  setRecordDateStatus("");
+  renderRecordDatePicker();
+}
+
+function validateRecordDateRange() {
+  var startValidation = window.RecordDatePicker.validateParts(recordDateState.start.parts);
+  var endValidation = window.RecordDatePicker.validateParts(recordDateState.end.parts);
+  if (!startValidation.valid || !startValidation.complete) {
+    activateRecordDateTarget("start");
+    setRecordDateStatus(startValidation.valid ? "请选择完整的开始日期" : startValidation.message);
+    return "";
+  }
+  if (!endValidation.valid || !endValidation.complete) {
+    activateRecordDateTarget("end");
+    setRecordDateStatus(endValidation.valid ? "请选择完整的结束日期" : endValidation.message);
+    return "";
+  }
+  try {
+    var date = window.MapLabelLayout.serializeDateRange(recordDateState.start.iso, recordDateState.end.iso);
+    setRecordDateStatus("");
+    return date;
+  } catch (_) {
+    activateRecordDateTarget("end");
+    setRecordDateStatus("结束日期不能早于开始日期");
+    return "";
+  }
 }
 
 // ========== Route Editor ==========
@@ -278,6 +462,7 @@ function loadCachedData() {
   state.records = snapshot.records;
   state.todos = snapshot.todos;
   state.photos = snapshot.photos;
+  state.capsules = snapshot.capsules;
 }
 
 function saveCachedData() {
@@ -287,6 +472,7 @@ function saveCachedData() {
     records: state.records,
     todos: state.todos,
     photos: state.photos,
+    capsules: state.capsules,
   });
 }
 
@@ -317,9 +503,11 @@ function setCloudStatus(status) {
 async function loadRemoteData() {
   if (!state.backendReady) return;
   setCloudStatus("loading");
-  var results = await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
+  var coreResults = await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
+  var capsuleResult = await Promise.allSettled([fetchCapsules()]);
+  if (capsuleResult[0].status === "rejected") state.capsules = [];
   renderAll();
-  var failed = results.some(function(result) { return result.status === "rejected"; });
+  var failed = coreResults.some(function(result) { return result.status === "rejected"; });
   if (failed) {
     state.backendReady = false;
     setCloudStatus("offline");
@@ -350,13 +538,14 @@ async function savePlan(entry) {
 }
 async function deletePlan(index) {
   var plan = state.plans[index];
-  if (!plan) return;
+  if (!plan || !(await confirmAction("确定删除这个出游计划吗？删除后无法恢复。"))) return;
   if (state.backendReady && plan.id) {
     try {
       await state.client.remove(tables.plans, plan.id);
     } catch (_) {
       state.backendReady = false;
       setCloudStatus("offline");
+      return;
     }
   }
   state.plans.splice(index, 1);
@@ -382,6 +571,123 @@ async function saveRecord(entry) {
     state.records.unshift(entry);
   }
   renderAll();
+  return true;
+}
+
+async function uploadStoryFiles(files, folder) {
+  var refs = [];
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    if (state.backendReady) {
+      var path = folder + "/" + Date.now() + "-" + i + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      await state.client.upload(storageBucket, path, file);
+      refs.push({ name: file.name, path: path, url: state.client.getPublicUrl(storageBucket, path) });
+    } else {
+      refs.push({ name: file.name, url: await fileToDataUrl(file) });
+    }
+  }
+  return refs;
+}
+
+async function renderFilePreview(files, selector) {
+  var target = document.querySelector(selector);
+  if (!target) return;
+  var urls = await Promise.all(files.map(fileToDataUrl));
+  target.innerHTML = urls.map(function(url, index) { return '<img src="' + escapeHtml(url) + '" alt="待上传照片 ' + (index + 1) + '" />'; }).join("");
+}
+
+async function submitRecordForm(event) {
+  event.preventDefault();
+  var status = document.querySelector("#record-form-status");
+  var date = validateRecordDateRange();
+  if (!date) return;
+  var fd = new FormData(recordForm);
+  try {
+    status.textContent = "正在保存这段故事...";
+    var photos = await uploadStoryFiles(recordDraftFiles, "records");
+    var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
+      description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: photos,
+      created_at: new Date().toISOString() };
+    if (state.backendReady) {
+      await state.client.insert(tables.records, [entry]);
+      await fetchRecords();
+    } else state.records.unshift(entry);
+    recordForm.reset(); resetRecordDatePicker(); recordDraftFiles = [];
+    document.querySelector("#record-photo-preview").innerHTML = "";
+    status.textContent = ""; closePanelById(recordPanel); renderAll();
+  } catch (error) {
+    state.backendReady = false; setCloudStatus("offline");
+    status.textContent = "保存没有成功，内容已为你保留。请检查网络后再试一次。";
+  }
+}
+
+async function deleteRecord(index) {
+  var record = state.records[index];
+  if (!record || !(await confirmAction("确定删除这段出游记录吗？删除后无法恢复。"))) return;
+  if (state.backendReady && record.id) {
+    try { await state.client.remove(tables.records, record.id); }
+    catch (_) { setCloudStatus("offline"); return; }
+  }
+  state.records.splice(index, 1); renderAll();
+}
+
+// ========== Time capsules ==========
+async function fetchCapsules() { state.capsules = await state.client.select(tables.capsules); }
+
+async function saveCapsule(entry, index) {
+  if (state.backendReady) {
+    if (index >= 0 && state.capsules[index] && state.capsules[index].id) await state.client.update(tables.capsules, state.capsules[index].id, entry);
+    else await state.client.insert(tables.capsules, [entry]);
+    await fetchCapsules();
+  } else if (index >= 0) state.capsules[index] = Object.assign({}, state.capsules[index], entry);
+  else state.capsules.unshift(entry);
+}
+
+async function submitCapsuleForm(event) {
+  event.preventDefault();
+  var status = document.querySelector("#capsule-form-status");
+  var fd = new FormData(capsuleForm);
+  try {
+    status.textContent = "正在封存...";
+    var newPhotos = capsuleDraftFiles.length ? await uploadStoryFiles(capsuleDraftFiles, "capsules") : capsuleExistingPhotos;
+    var current = editingCapsuleIndex >= 0 ? state.capsules[editingCapsuleIndex] : null;
+    var now = new Date().toISOString();
+    var entry = { title: fd.get("title").trim(), body: fd.get("body").trim(), unlock_date: fd.get("unlock_date"),
+      photos: newPhotos, created_at: current ? current.created_at : now, updated_at: now };
+    await saveCapsule(entry, editingCapsuleIndex);
+    capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; editingCapsuleIndex = -1;
+    document.querySelector("#capsule-photo-preview").innerHTML = "";
+    status.textContent = ""; closePanelById(capsulePanel); renderAll();
+  } catch (_) {
+    state.backendReady = false; setCloudStatus("offline");
+    status.textContent = "封存没有成功，文字和照片仍保留在表单中，请稍后重试。";
+  }
+}
+
+function editCapsule(index) {
+  var capsule = state.capsules[index];
+  if (!capsule || !window.StoryData.getCapsuleState(capsule).editable) return;
+  editingCapsuleIndex = index; capsuleDraftFiles = []; capsuleExistingPhotos = Array.isArray(capsule.photos) ? capsule.photos : [];
+  capsuleForm.elements.title.value = capsule.title || "";
+  capsuleForm.elements.body.value = capsule.body || "";
+  capsuleForm.elements.unlock_date.value = capsule.unlock_date || "";
+  document.querySelector("#capsule-photo-preview").innerHTML = capsuleExistingPhotos.map(function(photo) { return '<img src="' + escapeHtml(photo.url || "") + '" alt="胶囊照片" />'; }).join("");
+  openPanelById(capsulePanel);
+}
+
+async function deleteCapsule(index) {
+  var capsule = state.capsules[index];
+  if (!capsule || !(await confirmAction("确定删除这个时间胶囊吗？删除后无法恢复。"))) return;
+  if (state.backendReady && capsule.id) { try { await state.client.remove(tables.capsules, capsule.id); } catch (_) { setCloudStatus("offline"); return; } }
+  state.capsules.splice(index, 1); renderAll();
+}
+
+function confirmAction(message) {
+  var dialog = document.querySelector("#confirm-dialog");
+  if (!dialog || typeof dialog.showModal !== "function") return Promise.resolve(window.confirm(message));
+  document.querySelector("#confirm-message").textContent = message;
+  dialog.showModal();
+  return new Promise(function(resolve) { dialog.addEventListener("close", function done() { dialog.removeEventListener("close", done); resolve(dialog.returnValue === "confirm"); }); });
 }
 
 // ========== Todos ==========
@@ -466,6 +772,7 @@ async function uploadPhotos(files) {
 function renderAll() {
   renderPlans();
   renderRecords();
+  renderCapsules();
   renderTodos();
   renderPhotos();
   renderAnniversary();
@@ -504,7 +811,7 @@ function renderPlans() {
   list.innerHTML = state.plans.map(function(p, i) {
     return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
       '</span><div><h3>' + escapeHtml(p.title || "") + '</h3><p>' + escapeHtml(p.description || "") +
-      '</p></div><button class="delete-btn" data-delete-plan="' + i + '">×</button></article>';
+      '</p></div><button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button></article>';
   }).join("");
   list.querySelectorAll("[data-delete-plan]").forEach(function(btn) {
     btn.addEventListener("click", function() { deletePlan(parseInt(btn.dataset.deletePlan)); });
@@ -513,16 +820,48 @@ function renderPlans() {
 
 // ========== Render Records ==========
 function renderRecords() {
-  var list = document.querySelector("#record-list");
+  var list = document.querySelector("#story-timeline");
   if (!list) return;
-  if (!state.records.length) {
+  var records = window.StoryData.sortRecords(state.records.map(function(record, index) {
+    var normalized = window.StoryData.normalizeRecord(record);
+    normalized._sourceIndex = index;
+    return normalized;
+  }));
+  var stats = window.StoryData.summarizeRecords(records);
+  document.querySelector("#trip-count").textContent = stats.trips;
+  document.querySelector("#city-count").textContent = stats.cities;
+  document.querySelector("#story-photo-count").textContent = stats.photos;
+  if (!records.length) {
     list.innerHTML = '<p>还没有出游记录。</p><span>写下你们的旅途回忆吧。</span>';
     return;
   }
-  list.innerHTML = state.records.map(function(r) {
-    return '<article class="timeline-item"><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><div><h3>' +
-      escapeHtml(r.title || "") + '</h3><p>' + escapeHtml(r.description || "") + '</p></div></article>';
+  list.classList.remove("empty-state");
+  list.innerHTML = records.map(function(r) {
+    var originalIndex = r._sourceIndex;
+    return '<article class="story-card"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
+      escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div><p>' +
+      escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
+      (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) { return '<img src="' + escapeHtml(photo.url || "") + '" alt="' + escapeHtml(photo.name || r.title || "旅行照片") + '" loading="lazy" />'; }).join("") + '</div>' : '') + '</article>';
   }).join("");
+  list.querySelectorAll("[data-delete-record]").forEach(function(button) { button.addEventListener("click", function() { deleteRecord(parseInt(button.dataset.deleteRecord)); }); });
+}
+
+function renderCapsules() {
+  var target = document.querySelector("#time-capsule");
+  if (!target) return;
+  var createButton = '<button type="button" class="button primary" data-new-capsule>写一封给未来的信</button>';
+  if (!state.capsules.length) {
+    target.innerHTML = '<img class="capsule-mark" src="assets/icons/heart-outline.svg" alt="" /><span class="section-label">Time Capsule</span><h3>留一份惊喜给未来</h3><p class="muted">写下现在想说的话，选一个将来的日子再一起打开。</p>' + createButton;
+  } else {
+    target.innerHTML = '<img class="capsule-mark" src="assets/icons/heart-outline.svg" alt="" /><span class="section-label">Time Capsule</span><h3>写给未来的我们</h3>' + state.capsules.map(function(capsule, index) {
+      var view = window.StoryData.toPublicCapsule(capsule);
+      var content = view.unlocked ? '<p>' + escapeHtml(view.body || "") + '</p>' + (view.photos.length ? '<div class="capsule-photos">' + view.photos.map(function(photo) { return '<img src="' + escapeHtml(photo.url || "") + '" alt="胶囊照片" />'; }).join("") + '</div>' : '') : '<strong class="capsule-countdown">还有 ' + view.remainingDays + ' 天</strong><p class="muted">内容和照片会在 ' + escapeHtml(view.unlock_date || "") + ' 解锁。</p>';
+      return '<article class="capsule-entry"><p class="capsule-meta">封存于 ' + escapeHtml(String(view.created_at || "").slice(0,10)) + '</p><h3>' + escapeHtml(view.title) + '</h3>' + content + '<div class="capsule-actions">' + (view.editable ? '<button type="button" data-edit-capsule="' + index + '">24 小时内可编辑</button>' : '') + '<button type="button" data-delete-capsule="' + index + '">删除</button></div></article>';
+    }).join("") + createButton;
+  }
+  target.querySelector("[data-new-capsule]").addEventListener("click", function() { editingCapsuleIndex = -1; capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; openPanelById(capsulePanel); });
+  target.querySelectorAll("[data-edit-capsule]").forEach(function(button) { button.addEventListener("click", function() { editCapsule(parseInt(button.dataset.editCapsule)); }); });
+  target.querySelectorAll("[data-delete-capsule]").forEach(function(button) { button.addEventListener("click", function() { deleteCapsule(parseInt(button.dataset.deleteCapsule)); }); });
 }
 
 // ========== Render Todos ==========
