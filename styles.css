@@ -1213,7 +1213,7 @@ p {
 
 .todo-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr) 76px;
   align-items: center;
   gap: 18px;
   min-height: 66px;
@@ -1221,48 +1221,75 @@ p {
   color: var(--ink);
 }
 
-.todo-row > span {
+.todo-text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.todo-row.done > span {
+.todo-row.done .todo-text {
   color: var(--muted);
   text-decoration: line-through;
 }
 
-.todo-row button {
+.todo-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.todo-toggle,
+.todo-delete {
   display: grid;
   width: 28px;
   height: 28px;
-  justify-self: end;
   padding: 0;
   place-items: center;
-  border: 1px solid rgba(117, 104, 114, 0.7);
   border-radius: 50%;
+  cursor: pointer;
+}
+
+.todo-toggle {
+  border: 1px solid rgba(117, 104, 114, 0.7);
   color: var(--muted);
   background: transparent;
   font: inherit;
   font-weight: 800;
-  cursor: pointer;
 }
 
-.todo-row.done button {
+.todo-row.done .todo-toggle {
   color: #fff;
   background: var(--rose);
   border-color: var(--rose);
 }
 
-.todo-row button:hover,
-.todo-row button:focus-visible {
+.todo-delete {
+  border: 1px solid rgba(217, 95, 120, 0.34);
+  background: rgba(217, 95, 120, 0.08);
+}
+
+.todo-delete img {
+  width: 15px;
+  height: 15px;
+}
+
+.todo-toggle:hover,
+.todo-toggle:focus-visible,
+.todo-delete:hover,
+.todo-delete:focus-visible {
   border-color: var(--rose);
   color: var(--rose-dark);
   outline: 2px solid rgba(217, 95, 120, 0.2);
   outline-offset: 2px;
 }
 
-.todo-row.done button:hover,
-.todo-row.done button:focus-visible {
+.todo-delete:hover,
+.todo-delete:focus-visible {
+  background: rgba(217, 95, 120, 0.16);
+}
+
+.todo-row.done .todo-toggle:hover,
+.todo-row.done .todo-toggle:focus-visible {
   color: #fff;
 }
 
