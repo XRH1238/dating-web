@@ -16,3 +16,15 @@ test('想做的事删除前确认且云端失败时保留事项', () => {
   assert.match(deletion, /catch\s*\(_\)\s*\{[\s\S]*?setCloudStatus\("offline"\);[\s\S]*?return;/);
   assert.ok(deletion.indexOf('state.client.remove') < deletion.indexOf('state.todos.splice'), '本地移除应发生在云端删除成功后');
 });
+
+test('每条事项渲染完成按钮和带名称的垃圾桶按钮', () => {
+  const match = script.match(/function renderTodos\(\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(match, '缺少 renderTodos 函数');
+  const render = match[1];
+  assert.match(render, /class="todo-actions"/);
+  assert.match(render, /data-delete-todo=/);
+  assert.match(render, /aria-label="删除想做的事：/);
+  assert.match(render, /assets\/icons\/trash\.svg/);
+  assert.match(render, /deleteTodo\(parseInt\(btn\.dataset\.deleteTodo\)\)/);
+  assert.match(render, /data-delete-todo="' \+ entry\.index/);
+});

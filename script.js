@@ -916,13 +916,18 @@ function renderTodos() {
       var t = entry.todo;
       var action = t.done ? '标记为未完成' : '标记为已完成';
       return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span>' + escapeHtml(t.text) +
-        '</span><button type="button" aria-label="' + action + '：' + escapeHtml(t.text) + '" data-toggle-todo="' +
-        entry.index + '">' + (t.done ? '✓' : '') + '</button></div>';
+        '</span><span class="todo-actions"><button class="todo-toggle" type="button" aria-label="' + action + '：' +
+        escapeHtml(t.text) + '" data-toggle-todo="' + entry.index + '">' + (t.done ? '✓' : '') +
+        '</button><button class="todo-delete" type="button" aria-label="删除想做的事：' + escapeHtml(t.text) +
+        '" data-delete-todo="' + entry.index + '"><img src="assets/icons/trash.svg" alt="" /></button></span></div>';
     }).join("") + '</div>';
   }).join("") + '</div>';
   if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';
   list.querySelectorAll("[data-toggle-todo]").forEach(function(btn) {
     btn.addEventListener("click", function() { toggleTodo(parseInt(btn.dataset.toggleTodo)); });
+  });
+  list.querySelectorAll("[data-delete-todo]").forEach(function(btn) {
+    btn.addEventListener("click", function() { deleteTodo(parseInt(btn.dataset.deleteTodo)); });
   });
   list.querySelectorAll("[data-todo-page]").forEach(function(btn) { btn.addEventListener("click", function() { state.todoPage = parseInt(btn.dataset.todoPage); renderTodos(); }); });
 }
