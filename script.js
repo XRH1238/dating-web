@@ -915,7 +915,7 @@ function renderTodos() {
     return '<div class="todo-column">' + column.map(function(entry) {
       var t = entry.todo;
       var action = t.done ? '标记为未完成' : '标记为已完成';
-      return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span>' + escapeHtml(t.text) +
+      return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span class="todo-text">' + escapeHtml(t.text) +
         '</span><span class="todo-actions"><button class="todo-toggle" type="button" aria-label="' + action + '：' +
         escapeHtml(t.text) + '" data-toggle-todo="' + entry.index + '">' + (t.done ? '✓' : '') +
         '</button><button class="todo-delete" type="button" aria-label="删除想做的事：' + escapeHtml(t.text) +

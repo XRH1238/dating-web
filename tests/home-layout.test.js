@@ -29,12 +29,12 @@ test('想做的事采用宽版工作区并保留红色情感文案', () => {
   assert.match(styles, /\.todo-workspace\s*\{[^}]*scroll-margin-top:\s*132px/s);
 });
 
-test('事项按双栏排列且勾选按钮固定在每行右侧', () => {
+test('事项按双栏排列且操作按钮固定在每行右侧', () => {
   assert.match(script, /class="todo-items-grid"/);
   assert.match(script, /var splitIndex = Math\.ceil\(todos\.length \/ 2\)/);
   assert.match(script, /class="todo-column"/);
   assert.match(styles, /\.todo-items-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s);
-  assert.match(styles, /\.todo-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+42px/s);
+  assert.match(styles, /\.todo-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+76px/s);
   assert.match(styles, /@media \(max-width:\s*760px\)[\s\S]*?\.todo-items-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
 });
 

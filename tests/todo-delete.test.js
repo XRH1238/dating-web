@@ -28,3 +28,12 @@ test('每条事项渲染完成按钮和带名称的垃圾桶按钮', () => {
   assert.match(render, /deleteTodo\(parseInt\(btn\.dataset\.deleteTodo\)\)/);
   assert.match(render, /data-delete-todo="' \+ entry\.index/);
 });
+
+test('完成与删除按钮并排显示且保持各自状态', () => {
+  assert.match(css, /\.todo-actions\s*\{[^}]*display:\s*flex[^}]*gap:\s*10px/s);
+  assert.match(css, /\.todo-toggle,\s*\n\.todo-delete\s*\{[^}]*width:\s*28px[^}]*height:\s*28px/s);
+  assert.match(css, /\.todo-row\.done \.todo-toggle\s*\{[^}]*background:\s*var\(--rose\)/s);
+  assert.match(css, /\.todo-delete\s*\{[^}]*background:\s*rgba\(217,\s*95,\s*120,\s*0\.08\)/s);
+  assert.doesNotMatch(css, /\.todo-row\.done button\s*\{/);
+  assert.match(css, /\.todo-delete img\s*\{[^}]*width:\s*15px[^}]*height:\s*15px/s);
+});
