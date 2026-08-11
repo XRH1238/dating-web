@@ -724,6 +724,20 @@ async function toggleTodo(index) {
   }
   renderAll();
 }
+async function deleteTodo(index) {
+  var todo = state.todos[index];
+  if (!todo || !(await confirmAction("确定删除这件想做的事吗？删除后无法恢复。"))) return;
+  if (state.backendReady && todo.id) {
+    try {
+      await state.client.remove(tables.todos, todo.id);
+    } catch (_) {
+      setCloudStatus("offline");
+      return;
+    }
+  }
+  state.todos.splice(index, 1);
+  renderAll();
+}
 
 // ========== Photos ==========
 async function fetchPhotos() {
