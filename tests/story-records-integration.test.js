@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
 test('记录表单独立保存完整故事字段', () => {
   assert.match(script, /#record-form/);
@@ -19,8 +20,9 @@ test('记录失败时保留表单并可确认删除', () => {
   assert.match(script, /data-delete-record/);
 });
 
-test('记录图片限制为六张并生成预览', () => {
-  assert.match(script, /slice\(0,\s*6\)/);
+test('记录媒体限制为二十个并生成预览', () => {
+  assert.match(script, /MediaUpload\.selectFiles\([^,]+,\s*current\.length,\s*20\)/);
+  assert.match(script, /appendDraftMedia\([^,]+,\s*recordDraftFiles,/);
   assert.match(script, /record-photo-preview/);
 });
 
@@ -55,5 +57,22 @@ test('日期校验早于照片上传且失败时不会清空表单', () => {
   const submit = script.match(/async function submitRecordForm\(event\)\s*\{([\s\S]*?)\n\}/)[1];
   assert.ok(submit.indexOf('validateRecordDateRange()') < submit.indexOf('uploadStoryFiles'), '应先验证日期再上传照片');
   assert.match(submit, /if\s*\(!date\)\s*return/);
-  assert.match(submit, /resetRecordDatePicker\(\)/);
+  assert.match(submit, /clearRecordEditor\(\)/);
+  assert.match(script, /function clearRecordEditor\(\)[\s\S]*?resetRecordDatePicker\(\)/);
+});
+
+test('记录表单输入会写入本机草稿并在刷新后恢复', () => {
+  assert.match(html, /<script src="record-recovery\.js\?v=[^"]+"><\/script>[\s\S]*<script src="script\.js/);
+  assert.match(script, /RecordRecovery\.createDraftStore/);
+  assert.match(script, /recordForm\.addEventListener\("input",\s*saveRecordDraft\)/);
+  assert.match(script, /function restoreRecordDraft\(\)/);
+  assert.match(script, /已恢复上次未保存的草稿/);
+});
+
+test('离线保存与网络失败都会生成待同步的本机记录', () => {
+  const submit = script.match(/async function submitRecordForm\(event\)\s*\{([\s\S]*?)\n\}/)[1];
+  assert.match(submit, /persistPendingRecord/);
+  assert.match(script, /RecordRecovery\.createPendingRecord/);
+  assert.match(script, /RecordRecovery\.mergeRemoteRecords/);
+  assert.match(script, /async function syncPendingRecords\(\)/);
 });

@@ -67,3 +67,51 @@ test('艺术字装饰与筛选后的列表保持截图中的视觉层级', () =>
   assert.match(styles, /\.todo-filters\s*\{[^}]*display:\s*flex/s);
   assert.match(styles, /\.todo-filter\[aria-pressed="true"\]/);
 });
+
+test('首页采用梦幻主视觉与杂志式横向下一次出游信息条', () => {
+  assert.match(html, /<section class="hero hero-stage">/);
+  assert.match(html, /class="hero-effects" aria-hidden="true"/);
+  assert.match(html, /class="next-trip-strip"/);
+  assert.match(html, /id="next-trip-title"/);
+  assert.match(html, /id="next-trip-date"/);
+  assert.match(html, /id="next-trip-days"/);
+  assert.match(html, /id="next-trip-countdown"/);
+  assert.match(html, /assets\/images\/hero-romantic-santorini\.jpg/);
+  assert.match(html, /assets\/images\/trip-xiamen\.jpg/);
+});
+
+test('炫目动态包含分层入场、景深和行程流光', () => {
+  assert.match(styles, /@keyframes hero-title-reveal/);
+  assert.match(styles, /@keyframes hero-photo-drift/);
+  assert.match(styles, /@keyframes trip-strip-shine/);
+  assert.match(styles, /--hero-pointer-x/);
+  assert.match(styles, /\.hero-effects/);
+  assert.match(styles, /\.next-trip-strip\s*\{[^}]*grid-template-columns:/s);
+});
+
+test('减少动态效果会停用首页动画和景深变化', () => {
+  const reducedMotion = styles.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(reducedMotion, '缺少减少动态效果规则');
+  assert.match(reducedMotion[1], /\.hero-media span/);
+  assert.match(reducedMotion[1], /\.hero-content/);
+  assert.match(reducedMotion[1], /\.next-trip-strip/);
+  assert.match(reducedMotion[1], /animation:\s*none/);
+  assert.match(reducedMotion[1], /transform:\s*none/);
+});
+
+test('首页行程摘要由计划数据驱动且动态初始化尊重系统偏好', () => {
+  assert.match(script, /function renderNextTripSummary\(\)/);
+  assert.match(script, /renderPlans\(\);\s*renderNextTripSummary\(\);/);
+  assert.match(script, /next-trip-title/);
+  assert.match(script, /next-trip-date/);
+  assert.match(script, /next-trip-days/);
+  assert.match(script, /next-trip-countdown/);
+  assert.match(script, /function initHeroMotion\(\)/);
+  assert.match(script, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
+  assert.match(script, /pointermove/);
+});
+
+test('云端同步成功后状态条会自动收起', () => {
+  assert.match(script, /cloudStatus\.classList\.toggle\("is-hidden",\s*!status\)/);
+  assert.match(script, /setTimeout\(function\(\)\s*\{\s*setCloudStatus\(""\);\s*\},\s*4000\)/);
+});

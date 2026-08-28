@@ -51,7 +51,7 @@ const provinceNames = {
 const state = {
   client: null, backendReady: false,
   plans: [], records: [], todos: [], photos: [], capsules: [], todoPage: 1, todoFilter: "all",
-  snapshotStore: null,
+  snapshotStore: null, recordDraftStore: null,
 };
 
 // DOM refs
@@ -142,12 +142,65 @@ document.addEventListener("DOMContentLoaded", init);
 window.addEventListener("resize", scheduleMapView);
 
 async function init() {
+  initHeroMotion();
   bindEvents();
   connectSnapshotStore();
+  connectRecordDraftStore();
   loadCachedData();
+  restoreRecordDraft();
   renderAll();
   connectSupabase();
   await loadRemoteData();
+}
+
+function mediaSelectionMessage(selection) {
+  var messages = [];
+  if (selection.rejectedCount) messages.push("已忽略 " + selection.rejectedCount + " 个非照片或视频文件。");
+  if (selection.overflowCount) messages.push("每次最多 20 个文件，已忽略 " + selection.overflowCount + " 个超限文件。");
+  return messages.join(" ");
+}
+
+async function appendDraftMedia(files, current, previewSelector, statusSelector) {
+  var selection = window.MediaUpload.selectFiles(files, current.length, 20);
+  var next = current.concat(selection.files);
+  await renderFilePreview(next, previewSelector);
+  var status = document.querySelector(statusSelector);
+  if (status) status.textContent = mediaSelectionMessage(selection);
+  return next;
+}
+
+function bindMediaDropzone(name, input, receiveFiles) {
+  var zone = document.querySelector('[data-media-dropzone="' + name + '"]');
+  if (!zone || !input) return;
+  var dragDepth = 0;
+  var statusSelector = name === "gallery" ? "#gallery-media-status" : "#" + name + "-form-status";
+  function deliverFiles(files) {
+    var queuedFiles = Array.from(files || []);
+    Promise.resolve().then(function() {
+      return receiveFiles(queuedFiles);
+    }).catch(function() {
+      var status = document.querySelector(statusSelector);
+      if (status) status.textContent = "文件读取失败，请重新选择照片或视频。";
+    });
+  }
+  ["dragenter", "dragover", "dragleave", "drop"].forEach(function(type) {
+    zone.addEventListener(type, function(event) { event.preventDefault(); event.stopPropagation(); });
+  });
+  zone.addEventListener("dragenter", function() { dragDepth += 1; zone.classList.add("is-dragover"); });
+  zone.addEventListener("dragover", function(event) { if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"; });
+  zone.addEventListener("dragleave", function() {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) zone.classList.remove("is-dragover");
+  });
+  zone.addEventListener("drop", function(event) {
+    dragDepth = 0;
+    zone.classList.remove("is-dragover");
+    deliverFiles(event.dataTransfer && event.dataTransfer.files);
+  });
+  input.addEventListener("change", function() {
+    deliverFiles(input.files);
+    input.value = "";
+  });
 }
 
 function bindEvents() {
@@ -206,9 +259,12 @@ function bindEvents() {
       renderTodos();
     });
   });
-  if (photoInput) {
-    photoInput.addEventListener("change", function() { uploadPhotos(this.files); });
-  }
+  bindMediaDropzone("gallery", photoInput, async function(files) {
+    var selection = window.MediaUpload.selectFiles(files, 0, 20);
+    var status = document.querySelector("#gallery-media-status");
+    if (status) status.textContent = mediaSelectionMessage(selection);
+    await uploadPhotos(selection.files);
+  });
   var openRecord = document.querySelector("[data-open-record]");
   if (openRecord) openRecord.addEventListener("click", function() {
     openPanelById(recordPanel);
@@ -222,17 +278,22 @@ function bindEvents() {
     if (item) item.addEventListener("click", function(event) { if (event.target === item) closePanelById(item); });
   });
   var recordPhotoInput = document.querySelector("#record-photo-input");
-  if (recordPhotoInput) recordPhotoInput.addEventListener("change", async function() {
-    recordDraftFiles = Array.from(this.files || []).slice(0, 6);
-    await renderFilePreview(recordDraftFiles, "#record-photo-preview");
+  bindMediaDropzone("record", recordPhotoInput, async function(files) {
+    recordDraftFiles = await appendDraftMedia(files, recordDraftFiles, "#record-photo-preview", "#record-form-status");
+    saveRecordDraft();
   });
   var capsulePhotoInput = document.querySelector("#capsule-photo-input");
-  if (capsulePhotoInput) capsulePhotoInput.addEventListener("change", async function() {
-    capsuleDraftFiles = Array.from(this.files || []).slice(0, 6);
-    capsuleExistingPhotos = [];
-    await renderFilePreview(capsuleDraftFiles, "#capsule-photo-preview");
+  bindMediaDropzone("capsule", capsulePhotoInput, async function(files) {
+    var hadDraftMedia = capsuleDraftFiles.length > 0;
+    var nextDraftMedia = await appendDraftMedia(files, capsuleDraftFiles, "#capsule-photo-preview", "#capsule-form-status");
+    if (!hadDraftMedia && nextDraftMedia.length) capsuleExistingPhotos = [];
+    capsuleDraftFiles = nextDraftMedia;
   });
-  if (recordForm) recordForm.addEventListener("submit", submitRecordForm);
+  if (recordForm) {
+    recordForm.addEventListener("submit", submitRecordForm);
+    recordForm.addEventListener("input", saveRecordDraft);
+    recordForm.addEventListener("change", saveRecordDraft);
+  }
   if (capsuleForm) capsuleForm.addEventListener("submit", submitCapsuleForm);
   bindRecordDatePicker();
 }
@@ -326,6 +387,7 @@ function selectRecordCalendarDay(day) {
   entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
   setRecordDateStatus("");
   renderRecordDatePicker();
+  saveRecordDraft();
 }
 
 function changeRecordCalendarMonth(offset) {
@@ -455,6 +517,11 @@ function connectSnapshotStore() {
   state.snapshotStore = window.CloudDataClient.createSnapshotStore(window.localStorage, "dating-web:data:v1");
 }
 
+function connectRecordDraftStore() {
+  if (!window.RecordRecovery) return;
+  state.recordDraftStore = window.RecordRecovery.createDraftStore(window.localStorage, "dating-web:record-draft:v1");
+}
+
 function loadCachedData() {
   if (!state.snapshotStore) return;
   var snapshot = state.snapshotStore.load();
@@ -466,8 +533,8 @@ function loadCachedData() {
 }
 
 function saveCachedData() {
-  if (!state.snapshotStore) return;
-  state.snapshotStore.save({
+  if (!state.snapshotStore) return false;
+  return state.snapshotStore.save({
     plans: state.plans,
     records: state.records,
     todos: state.todos,
@@ -496,6 +563,7 @@ function setCloudStatus(status) {
     loading: "⏳ 正在同步云端数据...",
   };
   cloudStatus.textContent = map[status] || "";
+  cloudStatus.classList.toggle("is-hidden", !status);
   clearTimeout(cloudStatusTimer);
   if (status === "connected") cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 4000);
 }
@@ -508,6 +576,10 @@ async function loadRemoteData() {
   if (capsuleResult[0].status === "rejected") state.capsules = [];
   renderAll();
   var failed = coreResults.some(function(result) { return result.status === "rejected"; });
+  if (!failed) {
+    try { await syncPendingRecords(); }
+    catch (_) { failed = true; }
+  }
   if (failed) {
     state.backendReady = false;
     setCloudStatus("offline");
@@ -554,7 +626,143 @@ async function deletePlan(index) {
 
 // ========== Records ==========
 async function fetchRecords() {
-  state.records = await state.client.select(tables.records);
+  var cachedRecords = state.records.slice();
+  var remoteRecords = await state.client.select(tables.records);
+  state.records = window.RecordRecovery
+    ? window.RecordRecovery.mergeRemoteRecords(remoteRecords, cachedRecords)
+    : remoteRecords;
+}
+
+function collectRecordDraft() {
+  if (!recordForm) return null;
+  var fd = new FormData(recordForm);
+  return {
+    city: String(fd.get("city") || ""),
+    title: String(fd.get("title") || ""),
+    description: String(fd.get("description") || ""),
+    moods: fd.getAll("moods"),
+    startDate: recordDateState.start.iso,
+    endDate: recordDateState.end.iso,
+    photoNames: recordDraftFiles.map(function(file) { return file.name; }),
+  };
+}
+
+function hasRecordDraftContent(draft) {
+  return !!(draft && (String(draft.city || "").trim() || String(draft.title || "").trim() ||
+    String(draft.description || "").trim() || (Array.isArray(draft.moods) && draft.moods.length) ||
+    draft.startDate || draft.endDate || (Array.isArray(draft.photoNames) && draft.photoNames.length)));
+}
+
+function saveRecordDraft() {
+  if (!state.recordDraftStore) return;
+  var draft = collectRecordDraft();
+  if (!hasRecordDraftContent(draft)) {
+    state.recordDraftStore.clear();
+    return;
+  }
+  if (!state.recordDraftStore.save(draft)) {
+    var status = document.querySelector("#record-form-status");
+    if (status) status.textContent = "草稿无法保存到本机，请先复制文字备份。";
+  }
+}
+
+function recordDateEntryFromIso(iso) {
+  var parts = String(iso || "").split("-");
+  if (parts.length !== 3) return { parts: { year: "", month: "", day: "" }, iso: "" };
+  return { parts: { year: parts[0], month: String(Number(parts[1])), day: String(Number(parts[2])) }, iso: iso };
+}
+
+function restoreRecordDraft() {
+  if (!state.recordDraftStore || !recordForm) return;
+  var draft = state.recordDraftStore.load();
+  if (!hasRecordDraftContent(draft)) return;
+  recordForm.elements.city.value = draft.city || "";
+  recordForm.elements.title.value = draft.title || "";
+  recordForm.elements.description.value = draft.description || "";
+  Array.from(recordForm.elements.moods || []).forEach(function(input) {
+    input.checked = (draft.moods || []).includes(input.value);
+  });
+  recordDateState.start = recordDateEntryFromIso(draft.startDate);
+  recordDateState.end = recordDateEntryFromIso(draft.endDate);
+  var activeDate = recordDateState.start.iso || recordDateState.end.iso;
+  if (activeDate) {
+    var activeParts = activeDate.split("-");
+    recordDateState.viewYear = Number(activeParts[0]);
+    recordDateState.viewMonth = Number(activeParts[1]);
+  }
+  renderRecordDatePicker();
+  var status = document.querySelector("#record-form-status");
+  if (status) status.textContent = "已恢复上次未保存的草稿。" +
+    ((draft.photoNames || []).length ? " 照片需要重新选择。" : "");
+}
+
+function clearRecordEditor() {
+  recordForm.reset();
+  resetRecordDatePicker();
+  recordDraftFiles = [];
+  document.querySelector("#record-photo-preview").innerHTML = "";
+  if (state.recordDraftStore) state.recordDraftStore.clear();
+}
+
+function createLocalRecordId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return "record-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+}
+
+async function localStoryPhotoRefs(files) {
+  return Promise.all(files.map(async function(file) {
+    return { name: file.name, type: file.type, url: await fileToDataUrl(file) };
+  }));
+}
+
+function persistPendingRecord(entry, status) {
+  var pending = window.RecordRecovery.createPendingRecord(entry, createLocalRecordId());
+  state.records.unshift(pending);
+  if (!renderAll()) {
+    state.records.shift();
+    renderAll();
+    status.textContent = "本机空间不足，记录尚未保存。请先复制文字并减少照片后重试。";
+    return false;
+  }
+  clearRecordEditor();
+  closePanelById(recordPanel);
+  setCloudStatus("offline");
+  return true;
+}
+
+async function uploadPendingRecordPhotos(photos, localId) {
+  var uploaded = [];
+  for (var i = 0; i < (photos || []).length; i++) {
+    var photo = photos[i];
+    if (!photo.url || !photo.url.startsWith("data:")) {
+      uploaded.push(photo);
+      continue;
+    }
+    var response = await fetch(photo.url);
+    var blob = await response.blob();
+    var name = photo.name || ("photo-" + (i + 1) + ".jpg");
+    var path = "records/" + localId + "-" + i + "-" + name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    await state.client.upload(storageBucket, path, blob);
+    uploaded.push({ name: name, type: photo.type || blob.type, path: path, url: state.client.getPublicUrl(storageBucket, path) });
+  }
+  return uploaded;
+}
+
+async function syncPendingRecords() {
+  if (!state.backendReady || !window.RecordRecovery) return;
+  var pendingRecords = state.records.filter(function(record) { return record && record.pending_sync; });
+  for (var i = 0; i < pendingRecords.length; i++) {
+    var pending = pendingRecords[i];
+    var cloudRecord = window.RecordRecovery.toCloudRecord(pending);
+    cloudRecord.photos = await uploadPendingRecordPhotos(cloudRecord.photos, pending.local_id);
+    await state.client.insert(tables.records, [cloudRecord]);
+    state.records = state.records.filter(function(record) { return record.local_id !== pending.local_id; });
+    saveCachedData();
+  }
+  if (pendingRecords.length) {
+    await fetchRecords();
+    renderAll();
+  }
 }
 async function saveRecord(entry) {
   entry.created_at = new Date().toISOString();
@@ -581,19 +789,32 @@ async function uploadStoryFiles(files, folder) {
     if (state.backendReady) {
       var path = folder + "/" + Date.now() + "-" + i + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
       await state.client.upload(storageBucket, path, file);
-      refs.push({ name: file.name, path: path, url: state.client.getPublicUrl(storageBucket, path) });
+      refs.push({ name: file.name, type: file.type, path: path, url: state.client.getPublicUrl(storageBucket, path) });
     } else {
-      refs.push({ name: file.name, url: await fileToDataUrl(file) });
+      refs.push({ name: file.name, type: file.type, url: await fileToDataUrl(file) });
     }
   }
   return refs;
 }
 
+function mediaElementMarkup(media, alt, preview) {
+  var url = escapeHtml((media && media.url) || "");
+  var label = escapeHtml(alt || "媒体文件");
+  if (window.MediaUpload.isVideo(media)) {
+    return '<video src="' + url + '" controls preload="metadata" aria-label="' + label + '"></video>';
+  }
+  return '<img src="' + url + '" alt="' + label + '"' + (preview ? '' : ' loading="lazy"') + ' />';
+}
+
 async function renderFilePreview(files, selector) {
   var target = document.querySelector(selector);
   if (!target) return;
-  var urls = await Promise.all(files.map(fileToDataUrl));
-  target.innerHTML = urls.map(function(url, index) { return '<img src="' + escapeHtml(url) + '" alt="待上传照片 ' + (index + 1) + '" />'; }).join("");
+  var media = await Promise.all(files.map(async function(file) {
+    return { name: file.name, type: file.type, url: await fileToDataUrl(file) };
+  }));
+  target.innerHTML = media.map(function(item, index) {
+    return mediaElementMarkup(item, "待上传媒体 " + (index + 1), true);
+  }).join("");
 }
 
 async function submitRecordForm(event) {
@@ -602,22 +823,41 @@ async function submitRecordForm(event) {
   var date = validateRecordDateRange();
   if (!date) return;
   var fd = new FormData(recordForm);
+  var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
+    description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: [],
+    created_at: new Date().toISOString() };
+  var uploadedPhotos = null;
+  var inserted = false;
   try {
     status.textContent = "正在保存这段故事...";
-    var photos = await uploadStoryFiles(recordDraftFiles, "records");
-    var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
-      description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: photos,
-      created_at: new Date().toISOString() };
     if (state.backendReady) {
+      uploadedPhotos = await uploadStoryFiles(recordDraftFiles, "records");
+      entry.photos = uploadedPhotos;
       await state.client.insert(tables.records, [entry]);
+      inserted = true;
       await fetchRecords();
-    } else state.records.unshift(entry);
-    recordForm.reset(); resetRecordDatePicker(); recordDraftFiles = [];
-    document.querySelector("#record-photo-preview").innerHTML = "";
-    status.textContent = ""; closePanelById(recordPanel); renderAll();
+      clearRecordEditor();
+      status.textContent = "";
+      closePanelById(recordPanel);
+      renderAll();
+      return;
+    }
+    entry.photos = await localStoryPhotoRefs(recordDraftFiles);
+    persistPendingRecord(entry, status);
   } catch (error) {
     state.backendReady = false; setCloudStatus("offline");
-    status.textContent = "保存没有成功，内容已为你保留。请检查网络后再试一次。";
+    if (inserted) {
+      state.records.unshift(entry);
+      renderAll();
+      clearRecordEditor();
+      closePanelById(recordPanel);
+      return;
+    }
+    try {
+      entry.photos = uploadedPhotos || await localStoryPhotoRefs(recordDraftFiles);
+      if (persistPendingRecord(entry, status)) return;
+    } catch (_) {}
+    status.textContent = "保存没有成功，草稿仍保存在本机。请复制文字并检查网络后重试。";
   }
 }
 
@@ -671,7 +911,9 @@ function editCapsule(index) {
   capsuleForm.elements.title.value = capsule.title || "";
   capsuleForm.elements.body.value = capsule.body || "";
   capsuleForm.elements.unlock_date.value = capsule.unlock_date || "";
-  document.querySelector("#capsule-photo-preview").innerHTML = capsuleExistingPhotos.map(function(photo) { return '<img src="' + escapeHtml(photo.url || "") + '" alt="胶囊照片" />'; }).join("");
+  document.querySelector("#capsule-photo-preview").innerHTML = capsuleExistingPhotos.map(function(photo) {
+    return mediaElementMarkup(photo, "胶囊媒体", true);
+  }).join("");
   openPanelById(capsulePanel);
 }
 
@@ -776,6 +1018,7 @@ async function uploadPhotos(files) {
     } else {
       entry.url = await fileToDataUrl(file);
     }
+    entry.type = file.type;
     state.photos.unshift(entry);
   }
   if (photoCityInput) photoCityInput.value = "";
@@ -785,13 +1028,14 @@ async function uploadPhotos(files) {
 // ========== Render All ==========
 function renderAll() {
   renderPlans();
+  renderNextTripSummary();
   renderRecords();
   renderCapsules();
   renderTodos();
   renderPhotos();
   renderAnniversary();
   renderFootprintMap();
-  saveCachedData();
+  return saveCachedData();
 }
 
 // ========== Anniversary ==========
@@ -832,6 +1076,74 @@ function renderPlans() {
   });
 }
 
+function renderNextTripSummary() {
+  var title = document.querySelector("#next-trip-title");
+  var date = document.querySelector("#next-trip-date");
+  var days = document.querySelector("#next-trip-days");
+  var countdown = document.querySelector("#next-trip-countdown");
+  if (!title || !date || !days || !countdown) return;
+
+  if (!state.plans.length) {
+    title.textContent = "还没有填写";
+    date.textContent = "尚未确定";
+    days.textContent = "--";
+    countdown.textContent = "等待出发";
+    return;
+  }
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  var plans = state.plans.slice().sort(function(a, b) {
+    var aRange = window.MapLabelLayout.parseDateRange(a.date);
+    var bRange = window.MapLabelLayout.parseDateRange(b.date);
+    var aTime = aRange.valid ? new Date(aRange.start + "T00:00:00").getTime() : Number.MAX_SAFE_INTEGER;
+    var bTime = bRange.valid ? new Date(bRange.start + "T00:00:00").getTime() : Number.MAX_SAFE_INTEGER;
+    return aTime - bTime;
+  });
+  var plan = plans.find(function(item) {
+    var range = window.MapLabelLayout.parseDateRange(item.date);
+    return range.valid && new Date(range.end + "T23:59:59").getTime() >= today.getTime();
+  }) || plans[0];
+  var range = window.MapLabelLayout.parseDateRange(plan.date);
+
+  title.textContent = plan.title || "未命名旅程";
+  date.textContent = window.MapLabelLayout.formatDateRange(plan.date) || "尚未确定";
+  if (!range.valid) {
+    days.textContent = "--";
+    countdown.textContent = "日期待确认";
+    return;
+  }
+
+  var start = new Date(range.start + "T00:00:00");
+  var end = new Date(range.end + "T00:00:00");
+  var duration = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+  var remaining = Math.ceil((start.getTime() - today.getTime()) / 86400000);
+  days.textContent = String(duration);
+  countdown.textContent = remaining > 0 ? "还有 " + remaining + " 天" : remaining === 0 ? "今天出发" : "已经出发";
+}
+
+function initHeroMotion() {
+  var hero = document.querySelector(".hero-stage");
+  if (!hero || !window.matchMedia || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var motionFrame = 0;
+
+  hero.addEventListener("pointermove", function(event) {
+    if (motionFrame) cancelAnimationFrame(motionFrame);
+    motionFrame = requestAnimationFrame(function() {
+      var rect = hero.getBoundingClientRect();
+      var x = (event.clientX - rect.left) / rect.width - 0.5;
+      var y = (event.clientY - rect.top) / rect.height - 0.5;
+      hero.style.setProperty("--hero-pointer-x", String(x * -14) + "px");
+      hero.style.setProperty("--hero-pointer-y", String(y * -10) + "px");
+    });
+  });
+
+  hero.addEventListener("pointerleave", function() {
+    hero.style.setProperty("--hero-pointer-x", "0px");
+    hero.style.setProperty("--hero-pointer-y", "0px");
+  });
+}
+
 // ========== Render Records ==========
 function renderRecords() {
   var list = document.querySelector("#story-timeline");
@@ -855,7 +1167,9 @@ function renderRecords() {
     return '<article class="story-card"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
       escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div><p>' +
       escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
-      (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) { return '<img src="' + escapeHtml(photo.url || "") + '" alt="' + escapeHtml(photo.name || r.title || "旅行照片") + '" loading="lazy" />'; }).join("") + '</div>' : '') + '</article>';
+      (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) {
+        return mediaElementMarkup(photo, photo.name || r.title || "旅行媒体", false);
+      }).join("") + '</div>' : '') + '</article>';
   }).join("");
   list.querySelectorAll("[data-delete-record]").forEach(function(button) { button.addEventListener("click", function() { deleteRecord(parseInt(button.dataset.deleteRecord)); }); });
 }
@@ -869,7 +1183,9 @@ function renderCapsules() {
   } else {
     target.innerHTML = '<img class="capsule-mark" src="assets/icons/heart-outline.svg" alt="" /><span class="section-label">Time Capsule</span><h3>写给未来的我们</h3>' + state.capsules.map(function(capsule, index) {
       var view = window.StoryData.toPublicCapsule(capsule);
-      var content = view.unlocked ? '<p>' + escapeHtml(view.body || "") + '</p>' + (view.photos.length ? '<div class="capsule-photos">' + view.photos.map(function(photo) { return '<img src="' + escapeHtml(photo.url || "") + '" alt="胶囊照片" />'; }).join("") + '</div>' : '') : '<strong class="capsule-countdown">还有 ' + view.remainingDays + ' 天</strong><p class="muted">内容和照片会在 ' + escapeHtml(view.unlock_date || "") + ' 解锁。</p>';
+      var content = view.unlocked ? '<p>' + escapeHtml(view.body || "") + '</p>' + (view.photos.length ? '<div class="capsule-photos">' + view.photos.map(function(photo) {
+        return mediaElementMarkup(photo, "胶囊媒体", false);
+      }).join("") + '</div>' : '') : '<strong class="capsule-countdown">还有 ' + view.remainingDays + ' 天</strong><p class="muted">内容和照片会在 ' + escapeHtml(view.unlock_date || "") + ' 解锁。</p>';
       return '<article class="capsule-entry"><p class="capsule-meta">封存于 ' + escapeHtml(String(view.created_at || "").slice(0,10)) + '</p><h3>' + escapeHtml(view.title) + '</h3>' + content + '<div class="capsule-actions">' + (view.editable ? '<button type="button" data-edit-capsule="' + index + '">24 小时内可编辑</button>' : '') + '<button type="button" data-delete-capsule="' + index + '">删除</button></div></article>';
     }).join("") + createButton;
   }
@@ -935,17 +1251,13 @@ function renderTodos() {
 // ========== Render Photos ==========
 function renderPhotos() {
   var grid = document.querySelector("#gallery-grid");
-  var upload = document.querySelector(".gallery-upload");
   if (!grid) return;
   if (!state.photos.length) {
     grid.innerHTML = "";
-    if (upload) upload.style.display = "";
     return;
   }
-  if (upload) upload.style.display = "none";
   grid.innerHTML = state.photos.map(function(p) {
-    return '<figure><img src="' + escapeHtml(p.url || "") + '" alt="' + escapeHtml(p.name || "") +
-      '" loading="lazy" /></figure>';
+    return '<figure>' + mediaElementMarkup(p, p.name || "相册媒体", false) + '</figure>';
   }).join("");
 }
 

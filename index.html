@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20260730-4" />
+    <link rel="stylesheet" href="styles.css?v=20260826-1" />
   </head>
   <body>
     <header class="site-header">
@@ -24,35 +24,54 @@
     <div class="cloud-status" id="cloud-status" role="status">正在连接后端...</div>
 
     <main id="home">
-      <section class="hero">
+      <section class="hero hero-stage">
         <div class="hero-media" aria-hidden="true">
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=2400&q=92'); --slide-index: 0"></span>
+          <span style="--hero-image: url('assets/images/hero-romantic-santorini.jpg'); --slide-index: 0"></span>
           <span style="--hero-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2400&q=92'); --slide-index: 1"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=2400&q=92'); --slide-index: 2"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=2400&q=92'); --slide-index: 3"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=2400&q=92'); --slide-index: 4"></span>
+          <span style="--hero-image: url('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=2400&q=92'); --slide-index: 2"></span>
+        </div>
+        <div class="hero-effects" aria-hidden="true">
+          <span class="hero-glow hero-glow-one"></span>
+          <span class="hero-glow hero-glow-two"></span>
+          <span class="hero-sparkle-field"></span>
         </div>
         <div class="hero-content">
           <p class="eyebrow">For us, every road has a date</p>
-          <h1>记录我们一起走过的城市、海边和日落</h1>
+          <h1><span>记录我们一起走过的</span><span>城市、海边和日落</span></h1>
           <p class="hero-copy">
-            这里会慢慢装下我们的旅行计划、出游记录、想一起完成的小事，以及每一次出门时留下的照片。
+            把走过的城市、当时的心情和沿途照片，慢慢连成我们的故事。
           </p>
           <div class="hero-actions">
             <a class="button primary" href="#anniversary">看纪念日</a>
             <a class="button secondary" href="#todo">写下想做的事</a>
           </div>
         </div>
-        <a class="next-trip-card" href="#plans" aria-label="查看下一次出游计划">
-          <span class="card-kicker">下一次出游</span>
-          <strong>还没有填写</strong>
-          <span class="trip-date">在出游计划里写下第一站</span>
-          <div class="countdown">
-            <span>--</span>
-            <small>等待出发</small>
-          </div>
-        </a>
       </section>
+
+      <a class="next-trip-strip" href="#plans" aria-label="查看下一次出游计划">
+        <div class="trip-strip-heading">
+          <span class="card-kicker">下一次出游</span>
+          <small>Next Journey</small>
+        </div>
+        <img class="trip-strip-photo" src="assets/images/trip-xiamen.jpg" alt="厦门海边与世茂海峡大厦" />
+        <div class="trip-strip-item">
+          <span>目的地</span>
+          <strong id="next-trip-title">还没有填写</strong>
+          <small>把第一站写进计划</small>
+        </div>
+        <div class="trip-strip-item">
+          <span>出发日期</span>
+          <strong id="next-trip-date">尚未确定</strong>
+          <small id="next-trip-countdown">等待出发</small>
+        </div>
+        <div class="trip-strip-item">
+          <span>同行天数</span>
+          <strong><b id="next-trip-days">--</b> 天</strong>
+          <small>一起慢慢走</small>
+        </div>
+        <span class="trip-strip-action">查看计划 <b aria-hidden="true">→</b></span>
+        <span class="trip-strip-shine" aria-hidden="true"></span>
+      </a>
 
       <section class="section intro-grid" aria-label="网站功能概览">
         <div>
@@ -218,16 +237,15 @@
             <label class="photo-city-field" for="photo-city">拍摄城市
               <input id="photo-city" type="text" placeholder="例如：厦门" />
             </label>
-            <label class="upload-button">
-              上传照片
-              <input id="photo-input" type="file" accept="image/*" multiple />
-            </label>
           </div>
         </div>
-        <div class="gallery-upload">
-          <p>还没有照片。</p>
-          <span>点击“上传照片”选择本地图片，照片会先显示在这个页面里。</span>
-        </div>
+        <label class="media-dropzone gallery-media-dropzone" data-media-dropzone="gallery" for="photo-input">
+          <input class="media-input" id="photo-input" type="file" accept="image/*,video/*" multiple />
+          <span class="media-dropzone-icon" aria-hidden="true">⇩</span>
+          <strong>拖入照片或视频</strong>
+          <span>点击选择文件，每次最多 20 个文件</span>
+        </label>
+        <p class="media-upload-status" id="gallery-media-status" role="status" aria-live="polite"></p>
         <div class="gallery-grid" id="gallery-grid" aria-live="polite"></div>
       </section>
     </main>
@@ -307,7 +325,10 @@
           <fieldset class="mood-picker"><legend>那天的心情（可多选）</legend><div id="mood-options">
             <label><input name="moods" type="checkbox" value="开心" /><span>开心</span></label><label><input name="moods" type="checkbox" value="浪漫" /><span>浪漫</span></label><label><input name="moods" type="checkbox" value="惊喜" /><span>惊喜</span></label><label><input name="moods" type="checkbox" value="治愈" /><span>治愈</span></label><label><input name="moods" type="checkbox" value="难忘" /><span>难忘</span></label>
           </div></fieldset>
-          <label class="story-upload">添加照片（最多 6 张）<input id="record-photo-input" name="photos" type="file" accept="image/*" multiple /></label>
+          <label class="story-upload media-dropzone media-dropzone-compact" data-media-dropzone="record" for="record-photo-input">
+            <input class="media-input" id="record-photo-input" name="photos" type="file" accept="image/*,video/*" multiple />
+            <strong>添加照片或视频</strong><span>点击选择或拖到这里，最多 20 个照片或视频</span>
+          </label>
           <div class="story-photo-preview" id="record-photo-preview" aria-live="polite"></div>
           <p class="form-status" id="record-form-status" role="status"></p>
           <button class="button primary" type="submit">保存这段故事</button>
@@ -323,7 +344,10 @@
           <label>胶囊标题<input name="title" type="text" placeholder="例如：明年今天一起打开" required /></label>
           <label>想留给未来的话<textarea name="body" rows="6" required></textarea></label>
           <label>解锁日期<input name="unlock_date" type="date" required /></label>
-          <label class="story-upload">放入照片（最多 6 张）<input id="capsule-photo-input" name="photos" type="file" accept="image/*" multiple /></label>
+          <label class="story-upload media-dropzone media-dropzone-compact" data-media-dropzone="capsule" for="capsule-photo-input">
+            <input class="media-input" id="capsule-photo-input" name="photos" type="file" accept="image/*,video/*" multiple />
+            <strong>放入照片或视频</strong><span>点击选择或拖到这里，最多 20 个照片或视频</span>
+          </label>
           <div class="story-photo-preview" id="capsule-photo-preview" aria-live="polite"></div>
           <input name="capsule_id" type="hidden" />
           <p class="form-status" id="capsule-form-status" role="status"></p>
@@ -339,6 +363,8 @@
     </footer>
 
     <script src="cloud-data-client.js?v=20260804-1"></script>
+    <script src="media-upload.js?v=20260828-1"></script>
+    <script src="record-recovery.js?v=20260828-1"></script>
     <script src="story-data.js?v=20260804-1"></script>
     <script src="china-counties-data.js"></script>
     <script src="china-cities-data.js"></script>
