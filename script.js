@@ -495,6 +495,7 @@ function activateRecordDateTarget(target) {
 
 function updateRecordDateFromManual(part, value) {
   var entry = recordDateState[recordDateState.active];
+  var previousIso = entry.iso;
   entry.parts[part] = value;
   var year = Number(entry.parts.year), month = Number(entry.parts.month);
   if (entry.parts.year && entry.parts.month && year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
@@ -504,16 +505,32 @@ function updateRecordDateFromManual(part, value) {
   var validation = window.RecordDatePicker.validateParts(entry.parts);
   entry.iso = validation.valid && validation.complete ? window.RecordDatePicker.toIsoDate(entry.parts) : "";
   setRecordDateStatus(validation.valid ? "" : validation.message);
+  var advanced = advanceRecordDateTargetIfNeeded(previousIso);
   renderRecordDatePicker();
+  if (advanced) focusRecordEndDateInput();
 }
 
 function selectRecordCalendarDay(day) {
   var entry = recordDateState[recordDateState.active];
+  var previousIso = entry.iso;
   entry.parts = { year: String(recordDateState.viewYear), month: String(recordDateState.viewMonth), day: String(day) };
   entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
   setRecordDateStatus("");
+  var advanced = advanceRecordDateTargetIfNeeded(previousIso);
   renderRecordDatePicker();
+  if (advanced) focusRecordEndDateInput();
   saveRecordDraft();
+}
+
+function advanceRecordDateTargetIfNeeded(previousIso) {
+  if (!window.RecordDatePicker.shouldAdvanceToEnd(recordDateState.active, previousIso, recordDateState.start.iso)) return false;
+  recordDateState.active = "end";
+  return true;
+}
+
+function focusRecordEndDateInput() {
+  var yearInput = recordDatePicker && recordDatePicker.querySelector('[data-record-date-part="year"]');
+  if (yearInput) yearInput.focus();
 }
 
 function changeRecordCalendarMonth(offset) {

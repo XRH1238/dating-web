@@ -44,3 +44,10 @@ test('中文摘要支持完整日期和空值文案', () => {
   assert.equal(DatePicker.formatChineseDate('2026-08-05', '选择开始日期'), '2026年8月5日');
   assert.equal(DatePicker.formatChineseDate('', '选择开始日期'), '选择开始日期');
 });
+
+test('开始日期首次变为完整有效日期后切换到结束日期', () => {
+  assert.equal(DatePicker.shouldAdvanceToEnd('start', '', '2026-08-05'), true);
+  assert.equal(DatePicker.shouldAdvanceToEnd('start', '2026-08-04', '2026-08-05'), false);
+  assert.equal(DatePicker.shouldAdvanceToEnd('end', '', '2026-08-05'), false);
+  assert.equal(DatePicker.shouldAdvanceToEnd('start', '', ''), false);
+});
