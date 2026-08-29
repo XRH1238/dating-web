@@ -131,7 +131,22 @@ test('首页行程摘要由计划数据驱动且动态初始化尊重系统偏�
   assert.match(script, /pointermove/);
 });
 
+test('顶部行程条只显示进行中或未来计划且标签随状态变化', () => {
+  assert.match(html, /id="next-trip-label"/);
+  assert.match(script, /TripPlanning\.selectTopTrip/);
+  assert.match(script, /status\s*===\s*"ongoing"/);
+  assert.match(script, /正在出游/);
+  assert.match(script, /暂时没有下一次出游/);
+  assert.doesNotMatch(script, /\|\|\s*plans\[0\]/);
+});
+
 test('云端同步成功后状态条会自动收起', () => {
   assert.match(script, /cloudStatus\.classList\.toggle\("is-hidden",\s*!status\)/);
   assert.match(script, /setTimeout\(function\(\)\s*\{\s*setCloudStatus\(""\);\s*\},\s*4000\)/);
+});
+
+test('本次修改的页面资源使用同一组新缓存版本', () => {
+  ['styles.css', 'record-date-picker.js', 'record-moods.js', 'trip-planning.js', 'script.js'].forEach(asset => {
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-1'));
+  });
 });

@@ -12,6 +12,11 @@ test('记录拥有独立的完整表单和预览', () => {
   assert.match(html, /id="record-panel"/);
   ['start_date', 'end_date', 'city', 'title', 'description', 'moods', 'photos'].forEach(name => assert.match(html, new RegExp(`name="${name}"`)));
   assert.match(html, /id="record-photo-preview"/);
+  const recordForm = html.match(/<form id="record-form">([\s\S]*?)<\/form>/)[1];
+  assert.match(recordForm, /id="custom-mood-input"/);
+  assert.match(recordForm, /id="add-custom-mood"/);
+  assert.match(recordForm, /id="mood-status"[^>]*role="status"/);
+  assert.match(recordForm, /data-default-mood/);
 });
 
 test('记录日期使用中文摘要、手动年月日和共享日历', () => {

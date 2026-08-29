@@ -50,7 +50,7 @@
 
       <a class="next-trip-strip" href="#plans" aria-label="查看下一次出游计划">
         <div class="trip-strip-heading">
-          <span class="card-kicker">下一次出游</span>
+          <span class="card-kicker" id="next-trip-label">下一次出游</span>
           <small>Next Journey</small>
         </div>
         <img class="trip-strip-photo" src="assets/images/trip-xiamen.jpg" alt="厦门海边与世茂海峡大厦" />
@@ -288,12 +288,19 @@
             <p class="record-date-status" id="plan-date-status" role="status" aria-live="polite"></p>
           </div>
           <div class="plan-fields" id="plan-fields">
-            <div class="route-editor">
+            <div class="route-editor" data-route-direction="outbound">
               <div class="route-editor-heading">
-                <span>路线分段</span>
-                <button type="button" class="route-add-button" id="add-route-segment">添加一段</button>
+                <span>去程路线</span>
+                <button type="button" class="route-add-button" data-add-route-direction="outbound">添加一段</button>
               </div>
-              <div class="route-segments" id="route-segments"></div>
+              <div class="route-segments" id="outbound-route-segments"></div>
+            </div>
+            <div class="route-editor" data-route-direction="return">
+              <div class="route-editor-heading">
+                <span>返程路线</span>
+                <button type="button" class="route-add-button" data-add-route-direction="return">添加一段</button>
+              </div>
+              <div class="route-segments" id="return-route-segments"></div>
             </div>
           </div>
           <label>
@@ -340,8 +347,14 @@
           <div class="date-range-fields"><label>城市<input name="city" type="text" placeholder="例如：厦门市" required /></label><label>故事标题<input name="title" type="text" placeholder="例如：海风吹过的下午" required /></label></div>
           <label>这次发生了什么<textarea name="description" rows="5" placeholder="写下最想记住的片段" required></textarea></label>
           <fieldset class="mood-picker"><legend>那天的心情（可多选）</legend><div id="mood-options">
-            <label><input name="moods" type="checkbox" value="开心" /><span>开心</span></label><label><input name="moods" type="checkbox" value="浪漫" /><span>浪漫</span></label><label><input name="moods" type="checkbox" value="惊喜" /><span>惊喜</span></label><label><input name="moods" type="checkbox" value="治愈" /><span>治愈</span></label><label><input name="moods" type="checkbox" value="难忘" /><span>难忘</span></label>
-          </div></fieldset>
+            <label data-default-mood><input name="moods" type="checkbox" value="开心" /><span>开心</span></label><label data-default-mood><input name="moods" type="checkbox" value="浪漫" /><span>浪漫</span></label><label data-default-mood><input name="moods" type="checkbox" value="惊喜" /><span>惊喜</span></label><label data-default-mood><input name="moods" type="checkbox" value="治愈" /><span>治愈</span></label><label data-default-mood><input name="moods" type="checkbox" value="难忘" /><span>难忘</span></label>
+          </div>
+            <div class="custom-mood-entry">
+              <input id="custom-mood-input" type="text" autocomplete="off" placeholder="写下自己的心情" aria-describedby="mood-status" />
+              <button id="add-custom-mood" type="button">添加心情</button>
+            </div>
+            <p class="mood-status" id="mood-status" role="status" aria-live="polite"></p>
+          </fieldset>
           <label class="story-upload media-dropzone media-dropzone-compact" data-media-dropzone="record" for="record-photo-input">
             <input class="media-input" id="record-photo-input" name="photos" type="file" accept="image/*,video/*" multiple />
             <strong>添加照片或视频</strong><span>点击选择或拖到这里，最多 20 个照片或视频</span>
@@ -387,7 +400,9 @@
     <script src="china-cities-data.js"></script>
     <script src="china-provinces-data.js"></script>
     <script src="map-label-layout.js?v=20260718-1"></script>
-    <script src="record-date-picker.js?v=20260805-1"></script>
+    <script src="record-date-picker.js?v=20260830-1"></script>
+    <script src="record-moods.js?v=20260830-1"></script>
+    <script src="trip-planning.js?v=20260830-1"></script>
     <script src="script.js?v=20260830-1"></script>
   </body>
 </html>

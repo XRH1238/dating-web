@@ -75,6 +75,16 @@ test('记录表单输入会写入本机草稿并在刷新后恢复', () => {
   assert.match(script, /已恢复上次未保存的草稿/);
 });
 
+test('自定义心情可以添加、随草稿恢复并在清空时移除', () => {
+  assert.match(script, /function addCustomMood\(\)/);
+  assert.match(script, /function createMoodOption\(value, isDefault\)/);
+  assert.match(script, /function restoreMoodOptions\(selectedMoods\)/);
+  assert.match(script, /RecordMoods\.addMood/);
+  assert.match(script, /event\.key === "Enter"/);
+  assert.match(script, /input\.checked = selectedMoods\.includes\(input\.value\)/);
+  assert.match(script, /\[data-custom-mood\]/);
+});
+
 test('离线保存与网络失败都会生成待同步的本机记录', () => {
   const submit = script.match(/async function submitRecordForm\(event\)\s*\{([\s\S]*?)\n\}/)[1];
   assert.match(submit, /persistPendingRecord/);

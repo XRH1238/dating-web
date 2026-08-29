@@ -279,6 +279,15 @@ function bindEvents() {
     recordDraftFiles = await appendDraftMedia(files, recordDraftFiles, "#record-photo-preview", "#record-form-status");
     saveRecordDraft();
   });
+  var addCustomMoodButton = document.querySelector("#add-custom-mood");
+  var customMoodInput = document.querySelector("#custom-mood-input");
+  if (addCustomMoodButton) addCustomMoodButton.addEventListener("click", addCustomMood);
+  if (customMoodInput) customMoodInput.addEventListener("keydown", function(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCustomMood();
+    }
+  });
   var capsulePhotoInput = document.querySelector("#capsule-photo-input");
   bindMediaDropzone("capsule", capsulePhotoInput, async function(files) {
     var hadDraftMedia = capsuleDraftFiles.length > 0;
@@ -300,10 +309,13 @@ function togglePlanFields(show) {
   if (planFields) planFields.style.display = show ? "" : "none";
 }
 function resetRouteEditor() {
-  var container = document.querySelector("#route-segments");
-  if (!container) return;
-  container.innerHTML = "";
-  addRouteSegment();
+  var outbound = document.querySelector("#outbound-route-segments");
+  var returning = document.querySelector("#return-route-segments");
+  if (!outbound || !returning) return;
+  outbound.innerHTML = "";
+  returning.innerHTML = "";
+  addRouteSegment("outbound");
+  addRouteSegment("return");
 }
 
 // ========== Panel ==========
@@ -495,6 +507,7 @@ function activateRecordDateTarget(target) {
 
 function updateRecordDateFromManual(part, value) {
   var entry = recordDateState[recordDateState.active];
+  var previousIso = entry.iso;
   entry.parts[part] = value;
   var year = Number(entry.parts.year), month = Number(entry.parts.month);
   if (entry.parts.year && entry.parts.month && year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
@@ -504,16 +517,32 @@ function updateRecordDateFromManual(part, value) {
   var validation = window.RecordDatePicker.validateParts(entry.parts);
   entry.iso = validation.valid && validation.complete ? window.RecordDatePicker.toIsoDate(entry.parts) : "";
   setRecordDateStatus(validation.valid ? "" : validation.message);
+  var advanced = advanceRecordDateTargetIfNeeded(previousIso);
   renderRecordDatePicker();
+  if (advanced) focusRecordEndDateInput();
 }
 
 function selectRecordCalendarDay(day) {
   var entry = recordDateState[recordDateState.active];
+  var previousIso = entry.iso;
   entry.parts = { year: String(recordDateState.viewYear), month: String(recordDateState.viewMonth), day: String(day) };
   entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
   setRecordDateStatus("");
+  var advanced = advanceRecordDateTargetIfNeeded(previousIso);
   renderRecordDatePicker();
+  if (advanced) focusRecordEndDateInput();
   saveRecordDraft();
+}
+
+function advanceRecordDateTargetIfNeeded(previousIso) {
+  if (!window.RecordDatePicker.shouldAdvanceToEnd(recordDateState.active, previousIso, recordDateState.start.iso)) return false;
+  recordDateState.active = "end";
+  return true;
+}
+
+function focusRecordEndDateInput() {
+  var yearInput = recordDatePicker && recordDatePicker.querySelector('[data-record-date-part="year"]');
+  if (yearInput) yearInput.focus();
 }
 
 function changeRecordCalendarMonth(offset) {
@@ -594,27 +623,32 @@ function validateRecordDateRange() {
 }
 
 // ========== Route Editor ==========
-function addRouteSegment() {
-  var container = document.querySelector("#route-segments");
+function addRouteSegment(direction) {
+  direction = direction === "return" ? "return" : "outbound";
+  var container = document.querySelector(direction === "return" ? "#return-route-segments" : "#outbound-route-segments");
   if (!container) return;
-  var seg = document.createElement("div");
-  seg.className = "route-segment-row";
-  seg.innerHTML = '<input type="text" placeholder="出发城市" class="route-from" /><input type="text" placeholder="到达城市" class="route-to" /><select class="route-transport">' +
+  var row = document.createElement("div");
+  row.className = "route-segment-row";
+  row.dataset.direction = direction;
+  row.innerHTML = '<input type="text" placeholder="' + (direction === "return" ? "返程出发城市" : "去程出发城市") + '" class="route-from" /><input type="text" placeholder="到达城市" class="route-to" /><select class="route-transport">' +
     transportTypes.map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join("") +
-    '</select><button type="button" class="route-remove-btn">×</button>';
-  seg.querySelector(".route-remove-btn").addEventListener("click", function() {
-    seg.remove();
+    '</select><button type="button" class="route-remove-btn" aria-label="删除这一段路线">×</button>';
+  row.querySelector(".route-remove-btn").addEventListener("click", function() {
+    row.remove();
   });
-  container.appendChild(seg);
+  container.appendChild(row);
 }
 function getRouteSegments() {
-  var rows = document.querySelectorAll("#route-segments .route-segment-row");
+  var rows = document.querySelectorAll("#outbound-route-segments .route-segment-row, #return-route-segments .route-segment-row");
   var segments = [];
   rows.forEach(function(row) {
     var from = (row.querySelector(".route-from") || {}).value || "";
     var to = (row.querySelector(".route-to") || {}).value || "";
     var transport = (row.querySelector(".route-transport") || {}).value || "其他";
-    if (from.trim() && to.trim()) segments.push({ from: from.trim(), to: to.trim(), transport: transport });
+    if (from.trim() && to.trim()) segments.push({
+      from: from.trim(), to: to.trim(), transport: transport,
+      direction: row.dataset.direction === "return" ? "return" : "outbound"
+    });
   });
   return segments;
 }
@@ -633,9 +667,8 @@ function resolveCity(name) {
 }
 
 document.addEventListener("click", function(e) {
-  if (e.target && e.target.id === "add-route-segment") {
-    addRouteSegment();
-  }
+  var addButton = e.target && e.target.closest("[data-add-route-direction]");
+  if (addButton) addRouteSegment(addButton.dataset.addRouteDirection);
 });
 
 // ========== Supabase ==========
@@ -773,6 +806,49 @@ function collectRecordDraft() {
   };
 }
 
+function createMoodOption(value, isDefault) {
+  var label = document.createElement("label");
+  if (isDefault) label.dataset.defaultMood = "true";
+  else label.dataset.customMood = "true";
+  var input = document.createElement("input");
+  input.type = "checkbox";
+  input.name = "moods";
+  input.value = value;
+  var span = document.createElement("span");
+  span.textContent = value;
+  label.appendChild(input);
+  label.appendChild(span);
+  return label;
+}
+
+function addCustomMood() {
+  var inputField = document.querySelector("#custom-mood-input");
+  var options = document.querySelector("#mood-options");
+  var status = document.querySelector("#mood-status");
+  if (!inputField || !options || !window.RecordMoods) return;
+  var existing = Array.from(options.querySelectorAll('input[name="moods"]')).map(function(input) { return input.value; });
+  var result = window.RecordMoods.addMood(existing, inputField.value);
+  if (status) status.textContent = result.error;
+  if (result.error) return;
+  if (result.added) options.appendChild(createMoodOption(result.value, false));
+  var matchingInput = Array.from(options.querySelectorAll('input[name="moods"]')).find(function(input) { return input.value === result.value; });
+  if (matchingInput) matchingInput.checked = true;
+  inputField.value = "";
+  saveRecordDraft();
+}
+
+function restoreMoodOptions(selectedMoods) {
+  selectedMoods = Array.isArray(selectedMoods) ? selectedMoods : [];
+  document.querySelectorAll('#mood-options [data-custom-mood]').forEach(function(label) { label.remove(); });
+  var defaults = Array.from(document.querySelectorAll('#mood-options [data-default-mood] input')).map(function(input) { return input.value; });
+  window.RecordMoods.mergeMoodOptions(defaults, selectedMoods).forEach(function(value) {
+    if (defaults.indexOf(value) === -1) document.querySelector("#mood-options").appendChild(createMoodOption(value, false));
+  });
+  Array.from(recordForm.elements.moods || []).forEach(function(input) {
+    input.checked = selectedMoods.includes(input.value);
+  });
+}
+
 function hasRecordDraftContent(draft) {
   return !!(draft && (String(draft.city || "").trim() || String(draft.title || "").trim() ||
     String(draft.description || "").trim() || (Array.isArray(draft.moods) && draft.moods.length) ||
@@ -805,9 +881,7 @@ function restoreRecordDraft() {
   recordForm.elements.city.value = draft.city || "";
   recordForm.elements.title.value = draft.title || "";
   recordForm.elements.description.value = draft.description || "";
-  Array.from(recordForm.elements.moods || []).forEach(function(input) {
-    input.checked = (draft.moods || []).includes(input.value);
-  });
+  restoreMoodOptions(draft.moods || []);
   recordDateState.start = recordDateEntryFromIso(draft.startDate);
   recordDateState.end = recordDateEntryFromIso(draft.endDate);
   var activeDate = recordDateState.start.iso || recordDateState.end.iso;
@@ -824,6 +898,11 @@ function restoreRecordDraft() {
 
 function clearRecordEditor() {
   recordForm.reset();
+  document.querySelectorAll('#mood-options [data-custom-mood]').forEach(function(label) { label.remove(); });
+  var customMoodInput = document.querySelector("#custom-mood-input");
+  var moodStatus = document.querySelector("#mood-status");
+  if (customMoodInput) customMoodInput.value = "";
+  if (moodStatus) moodStatus.textContent = "";
   resetRecordDatePicker();
   recordDraftFiles = [];
   document.querySelector("#record-photo-preview").innerHTML = "";
@@ -1204,49 +1283,45 @@ function renderPlans() {
 }
 
 function renderNextTripSummary() {
+  var label = document.querySelector("#next-trip-label");
   var title = document.querySelector("#next-trip-title");
   var date = document.querySelector("#next-trip-date");
   var days = document.querySelector("#next-trip-days");
   var countdown = document.querySelector("#next-trip-countdown");
-  if (!title || !date || !days || !countdown) return;
+  if (!label || !title || !date || !days || !countdown) return;
 
-  if (!state.plans.length) {
-    title.textContent = "还没有填写";
+  var today = new Date();
+  var todayIso = String(today.getFullYear()).padStart(4, "0") + "-" +
+    String(today.getMonth() + 1).padStart(2, "0") + "-" +
+    String(today.getDate()).padStart(2, "0");
+  var selection = window.TripPlanning.selectTopTrip(state.plans, todayIso, window.MapLabelLayout.parseDateRange);
+
+  if (selection.status === "empty") {
+    var emptyMessage = "暂时没有下一次出游";
+    label.textContent = "暂无下一次出游";
+    title.textContent = "还没有新的计划";
     date.textContent = "尚未确定";
     days.textContent = "--";
-    countdown.textContent = "等待出发";
+    countdown.textContent = "写下下一次出发";
+    countdown.setAttribute("aria-label", emptyMessage);
     return;
   }
 
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  var plans = state.plans.slice().sort(function(a, b) {
-    var aRange = window.MapLabelLayout.parseDateRange(a.date);
-    var bRange = window.MapLabelLayout.parseDateRange(b.date);
-    var aTime = aRange.valid ? new Date(aRange.start + "T00:00:00").getTime() : Number.MAX_SAFE_INTEGER;
-    var bTime = bRange.valid ? new Date(bRange.start + "T00:00:00").getTime() : Number.MAX_SAFE_INTEGER;
-    return aTime - bTime;
-  });
-  var plan = plans.find(function(item) {
-    var range = window.MapLabelLayout.parseDateRange(item.date);
-    return range.valid && new Date(range.end + "T23:59:59").getTime() >= today.getTime();
-  }) || plans[0];
-  var range = window.MapLabelLayout.parseDateRange(plan.date);
+  var plan = selection.plan;
+  var range = selection.range;
+  label.textContent = selection.status === "ongoing" ? "正在出游" : "下一次出游";
 
   title.textContent = plan.title || "未命名旅程";
   date.textContent = window.MapLabelLayout.formatDateRange(plan.date) || "尚未确定";
-  if (!range.valid) {
-    days.textContent = "--";
-    countdown.textContent = "日期待确认";
-    return;
-  }
 
   var start = new Date(range.start + "T00:00:00");
   var end = new Date(range.end + "T00:00:00");
+  var todayStart = new Date(todayIso + "T00:00:00");
   var duration = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
-  var remaining = Math.ceil((start.getTime() - today.getTime()) / 86400000);
+  var remaining = Math.round((start.getTime() - todayStart.getTime()) / 86400000);
   days.textContent = String(duration);
-  countdown.textContent = remaining > 0 ? "还有 " + remaining + " 天" : remaining === 0 ? "今天出发" : "已经出发";
+  countdown.removeAttribute("aria-label");
+  countdown.textContent = selection.status === "ongoing" ? "旅途中" : "还有 " + remaining + " 天";
 }
 
 function initHeroMotion() {
@@ -1432,7 +1507,7 @@ function renderFootprintMap() {
     var segs = normalizePlanSegments(p).map(function(s) {
       var from = resolveCity(s.from);
       var to = resolveCity(s.to);
-      return { from: from ? from.name : s.from, to: to ? to.name : s.to, transport: s.transport,
+      return { from: from ? from.name : s.from, to: to ? to.name : s.to, transport: s.transport, direction: s.direction,
         start: from && from.coordinates, end: to && to.coordinates };
     }).filter(function(s) { return s.start && s.end; });
     return { title: p.title, segments: segs };
@@ -1473,6 +1548,7 @@ function renderFootprintMap() {
         '</span><p>' + p.segments.map(function(s) {
           var visual = transportVisual(s.transport);
           return '<span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
+            '<b class="route-direction-mark">' + (s.direction === "return" ? "返" : "去") + '</b>' +
             escapeHtml(s.from + " → " + s.to + " · " + s.transport);
         }).join("") + '</p></article>';
     }).join("") + '</div>' +
@@ -1480,20 +1556,7 @@ function renderFootprintMap() {
 }
 
 function normalizePlanSegments(plan) {
-  var segs = plan && plan.segments;
-  if (typeof segs === "string") { try { segs = JSON.parse(segs); } catch(e) { segs = []; } }
-  if (Array.isArray(segs) && segs.length) {
-    return segs.map(function(s) {
-      return { from: String(s.from || "").trim(), to: String(s.to || "").trim(),
-        transport: normalizeTransport(s.transport) };
-    }).filter(function(s) { return s.from && s.to; });
-  }
-  var legacy = [plan.origin].concat(String(plan.transfers||"").split(/[，,、;；\\s]+/).filter(Boolean), [plan.destination])
-    .filter(Boolean);
-  var transport = normalizeTransport(plan.transport);
-  return legacy.slice(0, -1).map(function(c, i) {
-    return { from: c, to: legacy[i+1], transport: transport };
-  });
+  return window.TripPlanning.normalizePlanSegments(plan, normalizeTransport);
 }
 
 // ========== China Map (AMap) ==========
@@ -1582,7 +1645,10 @@ function routeSvg(plans, visitedCities, mapPhotos) {
   var routes = plans.map(function(plan, planIndex) { return plan.segments.map(function(seg, segmentIndex) {
     var a = mapGeometry.project(seg.start), b = mapGeometry.project(seg.end), color = colors[planIndex % colors.length];
     var visual = transportVisual(seg.transport);
-    var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - Math.min(58, Math.abs(a[0] - b[0]) * .13);
+    var curveSign = seg.direction === "return" ? 1 : -1;
+    var curveOffset = Math.min(58, Math.abs(a[0] - b[0]) * 0.13 + 18);
+    var mx = (a[0] + b[0]) / 2;
+    var my = (a[1] + b[1]) / 2 + curveSign * curveOffset;
     var path = 'M' + a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' Q' + mx.toFixed(1) + ',' + my.toFixed(1) + ' ' + b[0].toFixed(1) + ',' + b[1].toFixed(1);
     return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + routeTransportGlyph(seg.transport) + '</g></g>';
   }).join(''); }).join('');

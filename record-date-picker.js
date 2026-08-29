@@ -62,6 +62,10 @@
     return cells;
   }
 
+  function shouldAdvanceToEnd(activeTarget, previousIso, nextIso) {
+    return activeTarget === "start" && !previousIso && Boolean(nextIso);
+  }
+
   return {
     daysInMonth: daysInMonth,
     createParts: createParts,
@@ -70,5 +74,6 @@
     formatChineseDate: formatChineseDate,
     shiftMonth: shiftMonth,
     buildMonthGrid: buildMonthGrid,
+    shouldAdvanceToEnd: shouldAdvanceToEnd,
   };
 });
