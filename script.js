@@ -1283,49 +1283,45 @@ function renderPlans() {
 }
 
 function renderNextTripSummary() {
+  var label = document.querySelector("#next-trip-label");
   var title = document.querySelector("#next-trip-title");
   var date = document.querySelector("#next-trip-date");
   var days = document.querySelector("#next-trip-days");
   var countdown = document.querySelector("#next-trip-countdown");
-  if (!title || !date || !days || !countdown) return;
+  if (!label || !title || !date || !days || !countdown) return;
 
-  if (!state.plans.length) {
-    title.textContent = "还没有填写";
+  var today = new Date();
+  var todayIso = String(today.getFullYear()).padStart(4, "0") + "-" +
+    String(today.getMonth() + 1).padStart(2, "0") + "-" +
+    String(today.getDate()).padStart(2, "0");
+  var selection = window.TripPlanning.selectTopTrip(state.plans, todayIso, window.MapLabelLayout.parseDateRange);
+
+  if (selection.status === "empty") {
+    var emptyMessage = "暂时没有下一次出游";
+    label.textContent = "暂无下一次出游";
+    title.textContent = "还没有新的计划";
     date.textContent = "尚未确定";
     days.textContent = "--";
-    countdown.textContent = "等待出发";
+    countdown.textContent = "写下下一次出发";
+    countdown.setAttribute("aria-label", emptyMessage);
     return;
   }
 
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
-  var plans = state.plans.slice().sort(function(a, b) {
-    var aRange = window.MapLabelLayout.parseDateRange(a.date);
-    var bRange = window.MapLabelLayout.parseDateRange(b.date);
-    var aTime = aRange.valid ? new Date(aRange.start + "T00:00:00").getTime() : Number.MAX_SAFE_INTEGER;
-    var bTime = bRange.valid ? new Date(bRange.start + "T00:00:00").getTime() : Number.MAX_SAFE_INTEGER;
-    return aTime - bTime;
-  });
-  var plan = plans.find(function(item) {
-    var range = window.MapLabelLayout.parseDateRange(item.date);
-    return range.valid && new Date(range.end + "T23:59:59").getTime() >= today.getTime();
-  }) || plans[0];
-  var range = window.MapLabelLayout.parseDateRange(plan.date);
+  var plan = selection.plan;
+  var range = selection.range;
+  label.textContent = selection.status === "ongoing" ? "正在出游" : "下一次出游";
 
   title.textContent = plan.title || "未命名旅程";
   date.textContent = window.MapLabelLayout.formatDateRange(plan.date) || "尚未确定";
-  if (!range.valid) {
-    days.textContent = "--";
-    countdown.textContent = "日期待确认";
-    return;
-  }
 
   var start = new Date(range.start + "T00:00:00");
   var end = new Date(range.end + "T00:00:00");
+  var todayStart = new Date(todayIso + "T00:00:00");
   var duration = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
-  var remaining = Math.ceil((start.getTime() - today.getTime()) / 86400000);
+  var remaining = Math.round((start.getTime() - todayStart.getTime()) / 86400000);
   days.textContent = String(duration);
-  countdown.textContent = remaining > 0 ? "还有 " + remaining + " 天" : remaining === 0 ? "今天出发" : "已经出发";
+  countdown.removeAttribute("aria-label");
+  countdown.textContent = selection.status === "ongoing" ? "旅途中" : "还有 " + remaining + " 天";
 }
 
 function initHeroMotion() {
