@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 
 test('记录表单独立保存完整故事字段', () => {
   assert.match(script, /#record-form/);
@@ -11,6 +12,11 @@ test('记录表单独立保存完整故事字段', () => {
   assert.match(script, /moods:/);
   assert.match(script, /photos:/);
   assert.match(script, /StoryData\.normalizeRecord/);
+});
+
+test('记录正文保留输入时的换行和空行', () => {
+  assert.match(script, /<p class="story-card-description">/);
+  assert.match(css, /\.story-card-description\s*\{[^}]*white-space:\s*pre-wrap/s);
 });
 
 test('记录失败时保留表单并可确认删除', () => {

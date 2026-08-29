@@ -1324,7 +1324,7 @@ function renderRecords() {
   list.innerHTML = records.map(function(r) {
     var originalIndex = r._sourceIndex;
     return '<article class="story-card"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
-      escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div><p>' +
+      escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div><p class="story-card-description">' +
       escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
       (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) {
         return mediaElementMarkup(photo, photo.name || r.title || "旅行媒体", false);

@@ -2413,6 +2413,7 @@ textarea {
 .story-card time { color: var(--sage); font-size: 13px; font-weight: 800; }
 .story-card h3 { margin-top: 7px; }
 .story-card-city { color: var(--rose-dark); font-size: 13px; font-weight: 800; }
+.story-card-description { white-space: pre-wrap; }
 .story-moods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .story-moods span { padding: 4px 9px; border-radius: 999px; background: var(--blush); color: var(--rose-dark); font-size: 12px; }
 .story-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 14px; }
