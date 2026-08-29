@@ -279,6 +279,15 @@ function bindEvents() {
     recordDraftFiles = await appendDraftMedia(files, recordDraftFiles, "#record-photo-preview", "#record-form-status");
     saveRecordDraft();
   });
+  var addCustomMoodButton = document.querySelector("#add-custom-mood");
+  var customMoodInput = document.querySelector("#custom-mood-input");
+  if (addCustomMoodButton) addCustomMoodButton.addEventListener("click", addCustomMood);
+  if (customMoodInput) customMoodInput.addEventListener("keydown", function(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCustomMood();
+    }
+  });
   var capsulePhotoInput = document.querySelector("#capsule-photo-input");
   bindMediaDropzone("capsule", capsulePhotoInput, async function(files) {
     var hadDraftMedia = capsuleDraftFiles.length > 0;
@@ -790,6 +799,49 @@ function collectRecordDraft() {
   };
 }
 
+function createMoodOption(value, isDefault) {
+  var label = document.createElement("label");
+  if (isDefault) label.dataset.defaultMood = "true";
+  else label.dataset.customMood = "true";
+  var input = document.createElement("input");
+  input.type = "checkbox";
+  input.name = "moods";
+  input.value = value;
+  var span = document.createElement("span");
+  span.textContent = value;
+  label.appendChild(input);
+  label.appendChild(span);
+  return label;
+}
+
+function addCustomMood() {
+  var inputField = document.querySelector("#custom-mood-input");
+  var options = document.querySelector("#mood-options");
+  var status = document.querySelector("#mood-status");
+  if (!inputField || !options || !window.RecordMoods) return;
+  var existing = Array.from(options.querySelectorAll('input[name="moods"]')).map(function(input) { return input.value; });
+  var result = window.RecordMoods.addMood(existing, inputField.value);
+  if (status) status.textContent = result.error;
+  if (result.error) return;
+  if (result.added) options.appendChild(createMoodOption(result.value, false));
+  var matchingInput = Array.from(options.querySelectorAll('input[name="moods"]')).find(function(input) { return input.value === result.value; });
+  if (matchingInput) matchingInput.checked = true;
+  inputField.value = "";
+  saveRecordDraft();
+}
+
+function restoreMoodOptions(selectedMoods) {
+  selectedMoods = Array.isArray(selectedMoods) ? selectedMoods : [];
+  document.querySelectorAll('#mood-options [data-custom-mood]').forEach(function(label) { label.remove(); });
+  var defaults = Array.from(document.querySelectorAll('#mood-options [data-default-mood] input')).map(function(input) { return input.value; });
+  window.RecordMoods.mergeMoodOptions(defaults, selectedMoods).forEach(function(value) {
+    if (defaults.indexOf(value) === -1) document.querySelector("#mood-options").appendChild(createMoodOption(value, false));
+  });
+  Array.from(recordForm.elements.moods || []).forEach(function(input) {
+    input.checked = selectedMoods.includes(input.value);
+  });
+}
+
 function hasRecordDraftContent(draft) {
   return !!(draft && (String(draft.city || "").trim() || String(draft.title || "").trim() ||
     String(draft.description || "").trim() || (Array.isArray(draft.moods) && draft.moods.length) ||
@@ -822,9 +874,7 @@ function restoreRecordDraft() {
   recordForm.elements.city.value = draft.city || "";
   recordForm.elements.title.value = draft.title || "";
   recordForm.elements.description.value = draft.description || "";
-  Array.from(recordForm.elements.moods || []).forEach(function(input) {
-    input.checked = (draft.moods || []).includes(input.value);
-  });
+  restoreMoodOptions(draft.moods || []);
   recordDateState.start = recordDateEntryFromIso(draft.startDate);
   recordDateState.end = recordDateEntryFromIso(draft.endDate);
   var activeDate = recordDateState.start.iso || recordDateState.end.iso;
@@ -841,6 +891,11 @@ function restoreRecordDraft() {
 
 function clearRecordEditor() {
   recordForm.reset();
+  document.querySelectorAll('#mood-options [data-custom-mood]').forEach(function(label) { label.remove(); });
+  var customMoodInput = document.querySelector("#custom-mood-input");
+  var moodStatus = document.querySelector("#mood-status");
+  if (customMoodInput) customMoodInput.value = "";
+  if (moodStatus) moodStatus.textContent = "";
   resetRecordDatePicker();
   recordDraftFiles = [];
   document.querySelector("#record-photo-preview").innerHTML = "";

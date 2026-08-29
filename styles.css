@@ -2549,6 +2549,15 @@ textarea {
 #mood-options input { position: absolute; opacity: 0; }
 #mood-options span { display: block; padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; background: #fff; cursor: pointer; }
 #mood-options input:checked + span { border-color: var(--rose); color: var(--rose-dark); background: var(--blush); }
+.custom-mood-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin-top: 12px; }
+.custom-mood-entry input { min-width: 0; }
+.custom-mood-entry button {
+  min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--rose-dark); background: #fff; font: inherit; font-weight: 800; cursor: pointer;
+}
+.custom-mood-entry button:hover { border-color: var(--rose); background: var(--blush); }
+.custom-mood-entry button:focus-visible { outline: 3px solid rgba(217, 95, 120, .28); outline-offset: 2px; }
+.mood-status { min-height: 20px; margin: 6px 0 0; color: var(--rose-dark); font-size: 13px; }
 .story-upload { width: 100%; }
 .story-photo-preview { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .story-photo-preview img,
@@ -2571,4 +2580,5 @@ textarea {
   .record-date-manual { flex-wrap: wrap; }
   .record-date-manual input { width: 58px; }
   .record-date-manual label:first-child input { width: 82px; }
+  .custom-mood-entry { grid-template-columns: 1fr; }
 }

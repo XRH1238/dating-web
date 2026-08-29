@@ -340,8 +340,14 @@
           <div class="date-range-fields"><label>城市<input name="city" type="text" placeholder="例如：厦门市" required /></label><label>故事标题<input name="title" type="text" placeholder="例如：海风吹过的下午" required /></label></div>
           <label>这次发生了什么<textarea name="description" rows="5" placeholder="写下最想记住的片段" required></textarea></label>
           <fieldset class="mood-picker"><legend>那天的心情（可多选）</legend><div id="mood-options">
-            <label><input name="moods" type="checkbox" value="开心" /><span>开心</span></label><label><input name="moods" type="checkbox" value="浪漫" /><span>浪漫</span></label><label><input name="moods" type="checkbox" value="惊喜" /><span>惊喜</span></label><label><input name="moods" type="checkbox" value="治愈" /><span>治愈</span></label><label><input name="moods" type="checkbox" value="难忘" /><span>难忘</span></label>
-          </div></fieldset>
+            <label data-default-mood><input name="moods" type="checkbox" value="开心" /><span>开心</span></label><label data-default-mood><input name="moods" type="checkbox" value="浪漫" /><span>浪漫</span></label><label data-default-mood><input name="moods" type="checkbox" value="惊喜" /><span>惊喜</span></label><label data-default-mood><input name="moods" type="checkbox" value="治愈" /><span>治愈</span></label><label data-default-mood><input name="moods" type="checkbox" value="难忘" /><span>难忘</span></label>
+          </div>
+            <div class="custom-mood-entry">
+              <input id="custom-mood-input" type="text" autocomplete="off" placeholder="写下自己的心情" aria-describedby="mood-status" />
+              <button id="add-custom-mood" type="button">添加心情</button>
+            </div>
+            <p class="mood-status" id="mood-status" role="status" aria-live="polite"></p>
+          </fieldset>
           <label class="story-upload media-dropzone media-dropzone-compact" data-media-dropzone="record" for="record-photo-input">
             <input class="media-input" id="record-photo-input" name="photos" type="file" accept="image/*,video/*" multiple />
             <strong>添加照片或视频</strong><span>点击选择或拖到这里，最多 20 个照片或视频</span>
