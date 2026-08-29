@@ -1193,9 +1193,10 @@ function renderPlans() {
     return;
   }
   list.innerHTML = state.plans.map(function(p, i) {
+    var description = String(p.description || "").trim();
     return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
-      '</span><div><h3>' + escapeHtml(p.title || "") + '</h3><p>' + escapeHtml(p.description || "") +
-      '</p></div><button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button></article>';
+      '</span><div><h3>' + escapeHtml(p.title || "") + '</h3>' + (description ? '<p>' + escapeHtml(description) + '</p>' : '') +
+      '</div><button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button></article>';
   }).join("");
   list.querySelectorAll("[data-delete-plan]").forEach(function(btn) {
     btn.addEventListener("click", function() { deletePlan(parseInt(btn.dataset.deletePlan)); });

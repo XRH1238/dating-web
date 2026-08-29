@@ -50,3 +50,9 @@ test('打开计划面板只重置计划日期', () => {
   assert.match(script, /resetRouteEditor\(\);\s*resetPlanDatePicker\(\);/);
   assert.doesNotMatch(script, /resetRouteEditor\(\);\s*resetRecordDatePicker\(\);/);
 });
+
+test('空计划描述不会渲染空段落', () => {
+  const render = script.match(/function renderPlans\(\)\s*\{([\s\S]*?)\n\}/)[1];
+  assert.match(render, /String\(p\.description\s*\|\|\s*""\)\.trim\(\)/);
+  assert.match(render, /description\s*\?\s*'<p>'/);
+});
