@@ -62,8 +62,7 @@ const form = document.querySelector("#quick-form");
 const panelTitle = document.querySelector("#panel-title");
 const panelLabel = document.querySelector("#panel-label");
 const planFields = document.querySelector("#plan-fields");
-const startDateInput = form && form.elements.start_date;
-const endDateInput = form && form.elements.end_date;
+const planDatePicker = document.querySelector("#plan-date-picker");
 const todoForm = document.querySelector("#todo-form");
 const photoInput = document.querySelector("#photo-input");
 const photoCityInput = document.querySelector("#photo-city");
@@ -73,6 +72,13 @@ const recordForm = document.querySelector("#record-form");
 const recordDatePicker = document.querySelector("#record-date-picker");
 const capsulePanel = document.querySelector("#capsule-panel");
 const capsuleForm = document.querySelector("#capsule-form");
+const planDateState = {
+  active: "start",
+  start: { parts: { year: "", month: "", day: "" }, iso: "" },
+  end: { parts: { year: "", month: "", day: "" }, iso: "" },
+  viewYear: new Date().getFullYear(),
+  viewMonth: new Date().getMonth() + 1,
+};
 const recordDateState = {
   active: "start",
   start: { parts: { year: "", month: "", day: "" }, iso: "" },
@@ -211,6 +217,7 @@ function bindEvents() {
       panelLabel.textContent = "New Plan";
       togglePlanFields(true);
       resetRouteEditor();
+      resetPlanDatePicker();
       panel.classList.add("is-open");
       panel.setAttribute("aria-hidden", "false");
       form.elements.title.focus();
@@ -224,25 +231,15 @@ function bindEvents() {
   form.addEventListener("submit", async function(e) {
     e.preventDefault();
     var fd = new FormData(form);
-    var date;
-    try {
-      date = window.MapLabelLayout.serializeDateRange(fd.get("start_date"), fd.get("end_date"));
-      endDateInput.setCustomValidity("");
-    } catch (error) {
-      endDateInput.setCustomValidity(error.message);
-      endDateInput.reportValidity();
-      endDateInput.focus();
-      return;
-    }
+    var date = validatePlanDateRange();
+    if (!date) return;
     var entry = { title: fd.get("title").trim(), date: date, description: fd.get("description").trim() };
     entry.segments = getRouteSegments();
     await savePlan(entry);
     form.reset();
-    endDateInput.min = "";
+    resetPlanDatePicker();
     closePanel();
   });
-  startDateInput.addEventListener("input", syncEndDateMinimum);
-  endDateInput.addEventListener("input", syncEndDateMinimum);
   if (todoForm) {
     todoForm.addEventListener("submit", async function(e) {
       e.preventDefault();
@@ -295,13 +292,8 @@ function bindEvents() {
     recordForm.addEventListener("change", saveRecordDraft);
   }
   if (capsuleForm) capsuleForm.addEventListener("submit", submitCapsuleForm);
+  bindPlanDatePicker();
   bindRecordDatePicker();
-}
-
-function syncEndDateMinimum() {
-  endDateInput.min = startDateInput.value;
-  var invalid = startDateInput.value && endDateInput.value && endDateInput.value < startDateInput.value;
-  endDateInput.setCustomValidity(invalid ? "结束日期不能早于开始日期" : "");
 }
 
 function togglePlanFields(show) {
@@ -330,6 +322,140 @@ function closePanelById(target) {
   if (!target) return;
   target.classList.remove("is-open");
   target.setAttribute("aria-hidden", "true");
+}
+
+// ========== Plan date picker ==========
+function bindPlanDatePicker() {
+  if (!planDatePicker || !window.RecordDatePicker) return;
+  planDatePicker.querySelectorAll("[data-plan-date-target]").forEach(function(button) {
+    button.addEventListener("click", function() { activatePlanDateTarget(button.dataset.planDateTarget); });
+  });
+  planDatePicker.querySelectorAll("[data-plan-date-part]").forEach(function(input) {
+    input.addEventListener("input", function() {
+      var cleanValue = input.value.replace(/\D/g, "");
+      if (input.value !== cleanValue) input.value = cleanValue;
+      updatePlanDateFromManual(input.dataset.planDatePart, cleanValue);
+    });
+  });
+  document.querySelector("#plan-date-prev").addEventListener("click", function() { changePlanCalendarMonth(-1); });
+  document.querySelector("#plan-date-next").addEventListener("click", function() { changePlanCalendarMonth(1); });
+  document.querySelector("#plan-date-grid").addEventListener("click", function(event) {
+    var button = event.target.closest("[data-plan-calendar-day]");
+    if (button) selectPlanCalendarDay(Number(button.dataset.planCalendarDay));
+  });
+  renderPlanDatePicker();
+}
+
+function activatePlanDateTarget(target) {
+  if (target !== "start" && target !== "end") return;
+  planDateState.active = target;
+  var activeEntry = planDateState[target];
+  var year = Number(activeEntry.parts.year), month = Number(activeEntry.parts.month);
+  if (year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
+    planDateState.viewYear = year;
+    planDateState.viewMonth = month;
+  }
+  setPlanDateStatus("");
+  renderPlanDatePicker();
+}
+
+function updatePlanDateFromManual(part, value) {
+  var entry = planDateState[planDateState.active];
+  entry.parts[part] = value;
+  var year = Number(entry.parts.year), month = Number(entry.parts.month);
+  if (entry.parts.year && entry.parts.month && year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
+    planDateState.viewYear = year;
+    planDateState.viewMonth = month;
+  }
+  var validation = window.RecordDatePicker.validateParts(entry.parts);
+  entry.iso = validation.valid && validation.complete ? window.RecordDatePicker.toIsoDate(entry.parts) : "";
+  setPlanDateStatus(validation.valid ? "" : validation.message);
+  renderPlanDatePicker();
+}
+
+function selectPlanCalendarDay(day) {
+  var entry = planDateState[planDateState.active];
+  entry.parts = { year: String(planDateState.viewYear), month: String(planDateState.viewMonth), day: String(day) };
+  entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
+  setPlanDateStatus("");
+  renderPlanDatePicker();
+}
+
+function changePlanCalendarMonth(offset) {
+  var next = window.RecordDatePicker.shiftMonth(planDateState.viewYear, planDateState.viewMonth, offset);
+  planDateState.viewYear = next.year;
+  planDateState.viewMonth = next.month;
+  renderPlanDatePicker();
+}
+
+function renderPlanDatePicker() {
+  if (!planDatePicker || !window.RecordDatePicker) return;
+  var activeEntry = planDateState[planDateState.active];
+  planDatePicker.querySelectorAll("[data-plan-date-target]").forEach(function(button) {
+    var target = button.dataset.planDateTarget;
+    var active = target === planDateState.active;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.querySelector("strong").textContent = window.RecordDatePicker.formatChineseDate(
+      planDateState[target].iso,
+      target === "start" ? "选择开始日期" : "选择结束日期"
+    );
+  });
+  planDatePicker.querySelectorAll("[data-plan-date-part]").forEach(function(input) {
+    input.value = activeEntry.parts[input.dataset.planDatePart] || "";
+  });
+  form.elements.start_date.value = planDateState.start.iso;
+  form.elements.end_date.value = planDateState.end.iso;
+  document.querySelector("#plan-date-heading").textContent = planDateState.viewYear + " 年 " + planDateState.viewMonth + " 月";
+  var selectedIso = activeEntry.iso;
+  var today = new Date();
+  var todayIso = window.RecordDatePicker.toIsoDate({ year: String(today.getFullYear()), month: String(today.getMonth() + 1), day: String(today.getDate()) });
+  document.querySelector("#plan-date-grid").innerHTML = window.RecordDatePicker.buildMonthGrid(planDateState.viewYear, planDateState.viewMonth).map(function(day) {
+    if (!day) return '<span class="record-calendar-empty" aria-hidden="true"></span>';
+    var iso = window.RecordDatePicker.toIsoDate({ year: String(planDateState.viewYear), month: String(planDateState.viewMonth), day: String(day) });
+    var classes = "record-calendar-day" + (iso === selectedIso ? " is-selected" : "") + (iso === todayIso ? " is-today" : "");
+    return '<button class="' + classes + '" type="button" role="gridcell" data-plan-calendar-day="' + day + '"' + (iso === selectedIso ? ' aria-selected="true"' : '') + '>' + day + '</button>';
+  }).join("");
+}
+
+function setPlanDateStatus(message) {
+  var status = document.querySelector("#plan-date-status");
+  if (status) status.textContent = message || "";
+}
+
+function resetPlanDatePicker() {
+  var today = new Date();
+  planDateState.active = "start";
+  planDateState.start = { parts: { year: "", month: "", day: "" }, iso: "" };
+  planDateState.end = { parts: { year: "", month: "", day: "" }, iso: "" };
+  planDateState.viewYear = today.getFullYear();
+  planDateState.viewMonth = today.getMonth() + 1;
+  setPlanDateStatus("");
+  renderPlanDatePicker();
+}
+
+function validatePlanDateRange() {
+  var startValidation = window.RecordDatePicker.validateParts(planDateState.start.parts);
+  var endValidation = window.RecordDatePicker.validateParts(planDateState.end.parts);
+  if (!startValidation.valid || !startValidation.complete) {
+    activatePlanDateTarget("start");
+    setPlanDateStatus(startValidation.valid ? "请选择完整的开始日期" : startValidation.message);
+    return "";
+  }
+  if (!endValidation.valid || !endValidation.complete) {
+    activatePlanDateTarget("end");
+    setPlanDateStatus(endValidation.valid ? "请选择完整的结束日期" : endValidation.message);
+    return "";
+  }
+  try {
+    var date = window.MapLabelLayout.serializeDateRange(planDateState.start.iso, planDateState.end.iso);
+    setPlanDateStatus("");
+    return date;
+  } catch (_) {
+    activatePlanDateTarget("end");
+    setPlanDateStatus("结束日期不能早于开始日期");
+    return "";
+  }
 }
 
 // ========== Record date picker ==========

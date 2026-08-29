@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const script = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 const planForm = html.match(/<form id="quick-form">([\s\S]*?)<\/form>/)[1];
 
 test('计划日期使用独立的中文摘要、手动输入和月历', () => {
@@ -26,4 +27,26 @@ test('计划日期使用独立的中文摘要、手动输入和月历', () => {
 test('计划简短描述允许为空', () => {
   const description = planForm.match(/<textarea name="description"[^>]*>/)[0];
   assert.doesNotMatch(description, /\srequired(?:\s|>)/);
+});
+
+test('计划日期拥有独立状态和事件入口', () => {
+  assert.match(script, /planDateState\s*=\s*\{[\s\S]*active:\s*"start"[\s\S]*start:[\s\S]*end:/);
+  assert.match(script, /function bindPlanDatePicker\(\)/);
+  assert.match(script, /function activatePlanDateTarget\(target\)/);
+  assert.match(script, /function updatePlanDateFromManual\(part, value\)/);
+  assert.match(script, /function selectPlanCalendarDay\(day\)/);
+  assert.match(script, /function changePlanCalendarMonth\(offset\)/);
+});
+
+test('计划提交先校验日期范围并保持原有序列化格式', () => {
+  assert.match(script, /function validatePlanDateRange\(\)/);
+  assert.match(script, /MapLabelLayout\.serializeDateRange\(planDateState\.start\.iso, planDateState\.end\.iso\)/);
+  const submit = script.match(/form\.addEventListener\("submit", async function\(e\) \{([\s\S]*?)\n  \}\);/)[1];
+  assert.match(submit, /date\s*=\s*validatePlanDateRange\(\)/);
+  assert.match(submit, /if\s*\(!date\)\s*return/);
+});
+
+test('打开计划面板只重置计划日期', () => {
+  assert.match(script, /resetRouteEditor\(\);\s*resetPlanDatePicker\(\);/);
+  assert.doesNotMatch(script, /resetRouteEditor\(\);\s*resetRecordDatePicker\(\);/);
 });
