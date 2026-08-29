@@ -89,6 +89,26 @@ test('炫目动态包含分层入场、景深和行程流光', () => {
   assert.match(styles, /\.next-trip-strip\s*\{[^}]*grid-template-columns:/s);
 });
 
+test('功能概览在宽屏占满整行并在中等桌面尺寸放大卡片', () => {
+  assert.match(styles, /\.intro-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(styles, /\.feature-grid\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(styles, /\.feature-item\s*\{[^}]*min-height:\s*clamp\(/s);
+  assert.match(
+    styles,
+    /@media \(max-width:\s*1100px\)[\s\S]*?\.feature-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s
+  );
+});
+
+test('首页主图首次移入通过逐帧缓动过渡而不是直接跳到鼠标偏移', () => {
+  assert.match(script, /pointerenter/);
+  assert.match(script, /currentX\s*\+=\s*\(targetX\s*-\s*currentX\)\s*\*\s*0\.1[0-9]/);
+  assert.match(script, /currentY\s*\+=\s*\(targetY\s*-\s*currentY\)\s*\*\s*0\.1[0-9]/);
+
+  const heroMediaRule = styles.match(/\.hero-stage \.hero-media\s*\{([\s\S]*?)\n\}/);
+  assert.ok(heroMediaRule, '缺少首页主图容器样式');
+  assert.doesNotMatch(heroMediaRule[1], /transition:\s*transform/, '主图动画不应与 transform transition 竞争');
+});
+
 test('减少动态效果会停用首页动画和景深变化', () => {
   const reducedMotion = styles.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(reducedMotion, '缺少减少动态效果规则');

@@ -1126,21 +1126,53 @@ function initHeroMotion() {
   var hero = document.querySelector(".hero-stage");
   if (!hero || !window.matchMedia || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   var motionFrame = 0;
+  var pointerActive = false;
+  var currentX = 0;
+  var currentY = 0;
+  var targetX = 0;
+  var targetY = 0;
+
+  function renderMotion() {
+    currentX += (targetX - currentX) * 0.14;
+    currentY += (targetY - currentY) * 0.14;
+    hero.style.setProperty("--hero-pointer-x", String(currentX) + "px");
+    hero.style.setProperty("--hero-pointer-y", String(currentY) + "px");
+
+    if (Math.abs(targetX - currentX) > 0.05 || Math.abs(targetY - currentY) > 0.05) {
+      motionFrame = requestAnimationFrame(renderMotion);
+      return;
+    }
+
+    currentX = targetX;
+    currentY = targetY;
+    hero.style.setProperty("--hero-pointer-x", String(currentX) + "px");
+    hero.style.setProperty("--hero-pointer-y", String(currentY) + "px");
+    motionFrame = 0;
+  }
+
+  function scheduleMotion() {
+    if (!motionFrame) motionFrame = requestAnimationFrame(renderMotion);
+  }
+
+  hero.addEventListener("pointerenter", function() {
+    pointerActive = true;
+  });
 
   hero.addEventListener("pointermove", function(event) {
-    if (motionFrame) cancelAnimationFrame(motionFrame);
-    motionFrame = requestAnimationFrame(function() {
-      var rect = hero.getBoundingClientRect();
-      var x = (event.clientX - rect.left) / rect.width - 0.5;
-      var y = (event.clientY - rect.top) / rect.height - 0.5;
-      hero.style.setProperty("--hero-pointer-x", String(x * -14) + "px");
-      hero.style.setProperty("--hero-pointer-y", String(y * -10) + "px");
-    });
+    if (!pointerActive) return;
+    var rect = hero.getBoundingClientRect();
+    var x = (event.clientX - rect.left) / rect.width - 0.5;
+    var y = (event.clientY - rect.top) / rect.height - 0.5;
+    targetX = x * -14;
+    targetY = y * -10;
+    scheduleMotion();
   });
 
   hero.addEventListener("pointerleave", function() {
-    hero.style.setProperty("--hero-pointer-x", "0px");
-    hero.style.setProperty("--hero-pointer-y", "0px");
+    pointerActive = false;
+    targetX = 0;
+    targetY = 0;
+    scheduleMotion();
   });
 }
 
