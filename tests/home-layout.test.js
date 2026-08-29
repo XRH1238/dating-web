@@ -144,3 +144,9 @@ test('云端同步成功后状态条会自动收起', () => {
   assert.match(script, /cloudStatus\.classList\.toggle\("is-hidden",\s*!status\)/);
   assert.match(script, /setTimeout\(function\(\)\s*\{\s*setCloudStatus\(""\);\s*\},\s*4000\)/);
 });
+
+test('本次修改的页面资源使用同一组新缓存版本', () => {
+  ['styles.css', 'record-date-picker.js', 'record-moods.js', 'trip-planning.js', 'script.js'].forEach(asset => {
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-1'));
+  });
+});
