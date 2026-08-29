@@ -2121,7 +2121,8 @@ form {
 }
 
 .plan-fields {
-  display: block;
+  display: grid;
+  gap: 14px;
 }
 
 .plan-fields.is-hidden {
@@ -2132,7 +2133,13 @@ form {
   display: grid;
   grid-column: 1 / -1;
   gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(217, 95, 120, .16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .34);
 }
+
+.route-editor[data-route-direction="return"] { background: rgba(82, 130, 112, .06); }
 
 .route-editor-heading {
   display: flex;
@@ -2172,6 +2179,11 @@ form {
   background: rgba(255, 255, 255, 0.56);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.route-direction-mark {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 6px;
+  border-radius: 50%; color: var(--rose-dark); background: var(--blush); font-size: 11px;
 }
 
 label {

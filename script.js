@@ -309,10 +309,13 @@ function togglePlanFields(show) {
   if (planFields) planFields.style.display = show ? "" : "none";
 }
 function resetRouteEditor() {
-  var container = document.querySelector("#route-segments");
-  if (!container) return;
-  container.innerHTML = "";
-  addRouteSegment();
+  var outbound = document.querySelector("#outbound-route-segments");
+  var returning = document.querySelector("#return-route-segments");
+  if (!outbound || !returning) return;
+  outbound.innerHTML = "";
+  returning.innerHTML = "";
+  addRouteSegment("outbound");
+  addRouteSegment("return");
 }
 
 // ========== Panel ==========
@@ -620,27 +623,32 @@ function validateRecordDateRange() {
 }
 
 // ========== Route Editor ==========
-function addRouteSegment() {
-  var container = document.querySelector("#route-segments");
+function addRouteSegment(direction) {
+  direction = direction === "return" ? "return" : "outbound";
+  var container = document.querySelector(direction === "return" ? "#return-route-segments" : "#outbound-route-segments");
   if (!container) return;
-  var seg = document.createElement("div");
-  seg.className = "route-segment-row";
-  seg.innerHTML = '<input type="text" placeholder="出发城市" class="route-from" /><input type="text" placeholder="到达城市" class="route-to" /><select class="route-transport">' +
+  var row = document.createElement("div");
+  row.className = "route-segment-row";
+  row.dataset.direction = direction;
+  row.innerHTML = '<input type="text" placeholder="' + (direction === "return" ? "返程出发城市" : "去程出发城市") + '" class="route-from" /><input type="text" placeholder="到达城市" class="route-to" /><select class="route-transport">' +
     transportTypes.map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join("") +
-    '</select><button type="button" class="route-remove-btn">×</button>';
-  seg.querySelector(".route-remove-btn").addEventListener("click", function() {
-    seg.remove();
+    '</select><button type="button" class="route-remove-btn" aria-label="删除这一段路线">×</button>';
+  row.querySelector(".route-remove-btn").addEventListener("click", function() {
+    row.remove();
   });
-  container.appendChild(seg);
+  container.appendChild(row);
 }
 function getRouteSegments() {
-  var rows = document.querySelectorAll("#route-segments .route-segment-row");
+  var rows = document.querySelectorAll("#outbound-route-segments .route-segment-row, #return-route-segments .route-segment-row");
   var segments = [];
   rows.forEach(function(row) {
     var from = (row.querySelector(".route-from") || {}).value || "";
     var to = (row.querySelector(".route-to") || {}).value || "";
     var transport = (row.querySelector(".route-transport") || {}).value || "其他";
-    if (from.trim() && to.trim()) segments.push({ from: from.trim(), to: to.trim(), transport: transport });
+    if (from.trim() && to.trim()) segments.push({
+      from: from.trim(), to: to.trim(), transport: transport,
+      direction: row.dataset.direction === "return" ? "return" : "outbound"
+    });
   });
   return segments;
 }
@@ -659,9 +667,8 @@ function resolveCity(name) {
 }
 
 document.addEventListener("click", function(e) {
-  if (e.target && e.target.id === "add-route-segment") {
-    addRouteSegment();
-  }
+  var addButton = e.target && e.target.closest("[data-add-route-direction]");
+  if (addButton) addRouteSegment(addButton.dataset.addRouteDirection);
 });
 
 // ========== Supabase ==========
@@ -1504,7 +1511,7 @@ function renderFootprintMap() {
     var segs = normalizePlanSegments(p).map(function(s) {
       var from = resolveCity(s.from);
       var to = resolveCity(s.to);
-      return { from: from ? from.name : s.from, to: to ? to.name : s.to, transport: s.transport,
+      return { from: from ? from.name : s.from, to: to ? to.name : s.to, transport: s.transport, direction: s.direction,
         start: from && from.coordinates, end: to && to.coordinates };
     }).filter(function(s) { return s.start && s.end; });
     return { title: p.title, segments: segs };
@@ -1545,6 +1552,7 @@ function renderFootprintMap() {
         '</span><p>' + p.segments.map(function(s) {
           var visual = transportVisual(s.transport);
           return '<span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
+            '<b class="route-direction-mark">' + (s.direction === "return" ? "返" : "去") + '</b>' +
             escapeHtml(s.from + " → " + s.to + " · " + s.transport);
         }).join("") + '</p></article>';
     }).join("") + '</div>' +
@@ -1552,20 +1560,7 @@ function renderFootprintMap() {
 }
 
 function normalizePlanSegments(plan) {
-  var segs = plan && plan.segments;
-  if (typeof segs === "string") { try { segs = JSON.parse(segs); } catch(e) { segs = []; } }
-  if (Array.isArray(segs) && segs.length) {
-    return segs.map(function(s) {
-      return { from: String(s.from || "").trim(), to: String(s.to || "").trim(),
-        transport: normalizeTransport(s.transport) };
-    }).filter(function(s) { return s.from && s.to; });
-  }
-  var legacy = [plan.origin].concat(String(plan.transfers||"").split(/[，,、;；\\s]+/).filter(Boolean), [plan.destination])
-    .filter(Boolean);
-  var transport = normalizeTransport(plan.transport);
-  return legacy.slice(0, -1).map(function(c, i) {
-    return { from: c, to: legacy[i+1], transport: transport };
-  });
+  return window.TripPlanning.normalizePlanSegments(plan, normalizeTransport);
 }
 
 // ========== China Map (AMap) ==========
@@ -1654,7 +1649,10 @@ function routeSvg(plans, visitedCities, mapPhotos) {
   var routes = plans.map(function(plan, planIndex) { return plan.segments.map(function(seg, segmentIndex) {
     var a = mapGeometry.project(seg.start), b = mapGeometry.project(seg.end), color = colors[planIndex % colors.length];
     var visual = transportVisual(seg.transport);
-    var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 - Math.min(58, Math.abs(a[0] - b[0]) * .13);
+    var curveSign = seg.direction === "return" ? 1 : -1;
+    var curveOffset = Math.min(58, Math.abs(a[0] - b[0]) * 0.13 + 18);
+    var mx = (a[0] + b[0]) / 2;
+    var my = (a[1] + b[1]) / 2 + curveSign * curveOffset;
     var path = 'M' + a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' Q' + mx.toFixed(1) + ',' + my.toFixed(1) + ' ' + b[0].toFixed(1) + ',' + b[1].toFixed(1);
     return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + routeTransportGlyph(seg.transport) + '</g></g>';
   }).join(''); }).join('');

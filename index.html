@@ -288,12 +288,19 @@
             <p class="record-date-status" id="plan-date-status" role="status" aria-live="polite"></p>
           </div>
           <div class="plan-fields" id="plan-fields">
-            <div class="route-editor">
+            <div class="route-editor" data-route-direction="outbound">
               <div class="route-editor-heading">
-                <span>路线分段</span>
-                <button type="button" class="route-add-button" id="add-route-segment">添加一段</button>
+                <span>去程路线</span>
+                <button type="button" class="route-add-button" data-add-route-direction="outbound">添加一段</button>
               </div>
-              <div class="route-segments" id="route-segments"></div>
+              <div class="route-segments" id="outbound-route-segments"></div>
+            </div>
+            <div class="route-editor" data-route-direction="return">
+              <div class="route-editor-heading">
+                <span>返程路线</span>
+                <button type="button" class="route-add-button" data-add-route-direction="return">添加一段</button>
+              </div>
+              <div class="route-segments" id="return-route-segments"></div>
             </div>
           </div>
           <label>
