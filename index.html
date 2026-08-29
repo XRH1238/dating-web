@@ -251,7 +251,7 @@
     </main>
 
     <div class="panel" id="quick-panel" aria-hidden="true">
-      <div class="panel-card" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+      <div class="panel-card story-form-card" role="dialog" aria-modal="true" aria-labelledby="panel-title">
         <button class="panel-close" type="button" aria-label="关闭">×</button>
         <span class="section-label" id="panel-label">Quick Add</span>
         <h2 id="panel-title">添加内容</h2>
@@ -260,15 +260,32 @@
             标题
             <input name="title" type="text" placeholder="例如：厦门三日游" required />
           </label>
-          <div class="date-range-fields">
-            <label>
-              开始日期
-              <input name="start_date" type="date" required />
-            </label>
-            <label>
-              结束日期
-              <input name="end_date" type="date" required />
-            </label>
+          <div class="record-date-picker" id="plan-date-picker">
+            <div class="record-date-summary" role="group" aria-label="计划日期范围">
+              <button class="record-date-summary-button is-active" type="button" data-plan-date-target="start" aria-pressed="true"><span>开始日期</span><strong>选择开始日期</strong></button>
+              <span class="record-date-arrow" aria-hidden="true">至</span>
+              <button class="record-date-summary-button" type="button" data-plan-date-target="end" aria-pressed="false"><span>结束日期</span><strong>选择结束日期</strong></button>
+            </div>
+            <input name="start_date" type="hidden" />
+            <input name="end_date" type="hidden" />
+            <div class="record-date-manual" role="group" aria-label="手动填写当前计划日期">
+              <label><span>年</span><input data-plan-date-part="year" inputmode="numeric" autocomplete="off" maxlength="4" aria-label="年份" /></label>
+              <span aria-hidden="true">年</span>
+              <label><span>月</span><input data-plan-date-part="month" inputmode="numeric" autocomplete="off" maxlength="2" aria-label="月份" /></label>
+              <span aria-hidden="true">月</span>
+              <label><span>日</span><input data-plan-date-part="day" inputmode="numeric" autocomplete="off" maxlength="2" aria-label="日期" /></label>
+              <span aria-hidden="true">日</span>
+            </div>
+            <div class="record-calendar" aria-labelledby="plan-date-heading">
+              <div class="record-calendar-head">
+                <button id="plan-date-prev" type="button" aria-label="上一个月">‹</button>
+                <strong id="plan-date-heading">选择日期</strong>
+                <button id="plan-date-next" type="button" aria-label="下一个月">›</button>
+              </div>
+              <div class="record-calendar-weekdays" aria-hidden="true"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+              <div class="record-date-grid" id="plan-date-grid" role="grid" aria-label="日期"></div>
+            </div>
+            <p class="record-date-status" id="plan-date-status" role="status" aria-live="polite"></p>
           </div>
           <div class="plan-fields" id="plan-fields">
             <div class="route-editor">
@@ -281,7 +298,7 @@
           </div>
           <label>
             简短描述
-            <textarea name="description" rows="4" placeholder="写下最想记住的安排或回忆" required></textarea>
+            <textarea name="description" rows="4" placeholder="写下最想记住的安排或回忆"></textarea>
           </label>
           <button class="button primary" type="submit">保存到页面</button>
         </form>

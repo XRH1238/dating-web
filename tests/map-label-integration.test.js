@@ -56,12 +56,15 @@ test('SVG 地图内容只由 transform 属性决定缩放中心', () => {
   );
 });
 
-test('计划保留原生日期而记录改用隐藏 ISO 日期', () => {
+test('计划与记录使用独立容器和隐藏 ISO 日期', () => {
   const quickForm = html.match(/<form id="quick-form">([\s\S]*?)<\/form>/)[1];
   const recordForm = html.match(/<form id="record-form">([\s\S]*?)<\/form>/)[1];
-  assert.match(quickForm, /name="start_date"\s+type="date"/);
-  assert.match(quickForm, /name="end_date"\s+type="date"/);
+  assert.doesNotMatch(quickForm, /type="date"/);
+  assert.match(quickForm, /id="plan-date-picker"/);
+  assert.match(quickForm, /name="start_date"\s+type="hidden"/);
+  assert.match(quickForm, /name="end_date"\s+type="hidden"/);
   assert.doesNotMatch(recordForm, /type="date"/);
+  assert.match(recordForm, /id="record-date-picker"/);
   assert.match(recordForm, /name="start_date"\s+type="hidden"/);
   assert.match(recordForm, /name="end_date"\s+type="hidden"/);
   assert.doesNotMatch(html, /name="date"\s+type="text"/);
@@ -70,7 +73,6 @@ test('计划保留原生日期而记录改用隐藏 ISO 日期', () => {
 test('表单统一序列化日期范围且列表统一格式化', () => {
   assert.match(script, /MapLabelLayout\.serializeDateRange/);
   assert.match(script, /MapLabelLayout\.formatDateRange/);
-  assert.match(script, /endDateInput\.min\s*=/);
 });
 
 test('路线重绘不依赖会被地图替换的overlay节点', () => {
