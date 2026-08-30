@@ -41,6 +41,8 @@
   function createCloudDataClient(options) {
     var baseUrl = String(options.url || "").replace(/\/$/, "");
     var key = options.key;
+    var storageBaseUrl = String(options.storageUrl || options.url || "").replace(/\/$/, "");
+    var storageKey = options.storageKey || key;
     var timeoutMs = options.timeoutMs || 10000;
     var request = options.fetchImpl || (typeof fetch === "function" ? fetch.bind(globalThis) : null);
     if (!request) throw new Error("浏览器不支持云端请求");
@@ -62,6 +64,10 @@
 
     function headers(extra) {
       return Object.assign({ apikey: key, Authorization: "Bearer " + key }, extra || {});
+    }
+
+    function storageHeaders(extra) {
+      return Object.assign({ apikey: storageKey, Authorization: "Bearer " + storageKey }, extra || {});
     }
 
     async function parse(response) {
@@ -114,9 +120,9 @@
       },
       upload: async function(bucket, path, file) {
         var encodedPath = path.split("/").map(encodeURIComponent).join("/");
-        var response = await timedRequest(baseUrl + "/storage/v1/object/" + safeSegment(bucket) + "/" + encodedPath, {
+        var response = await timedRequest(storageBaseUrl + "/storage/v1/object/" + safeSegment(bucket) + "/" + encodedPath, {
           method: "POST",
-          headers: headers({ "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" }),
+          headers: storageHeaders({ "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" }),
           body: file,
         });
         return parse(response);
@@ -124,16 +130,16 @@
       removeObjects: async function(bucket, paths) {
         var prefixes = Array.from(paths || []).filter(Boolean);
         if (!prefixes.length) return [];
-        var response = await timedRequest(baseUrl + "/storage/v1/object/" + safeSegment(bucket), {
+        var response = await timedRequest(storageBaseUrl + "/storage/v1/object/" + safeSegment(bucket), {
           method: "DELETE",
-          headers: headers({ "Content-Type": "application/json" }),
+          headers: storageHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ prefixes: prefixes }),
         });
         return parse(response);
       },
       getPublicUrl: function(bucket, path) {
         var encodedPath = path.split("/").map(encodeURIComponent).join("/");
-        return baseUrl + "/storage/v1/object/public/" + safeSegment(bucket) + "/" + encodedPath;
+        return storageBaseUrl + "/storage/v1/object/public/" + safeSegment(bucket) + "/" + encodedPath;
       },
     };
   }
