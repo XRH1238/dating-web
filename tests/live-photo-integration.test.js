@@ -50,3 +50,26 @@ test('待同步的本地实况照片会同时上传两份资源', () => {
   assert.match(script, /photo\.motion_url/);
   assert.match(script, /motion_path/);
 });
+
+test('页面包含可访问的高清媒体对话框和控制按钮', () => {
+  assert.match(html, /<dialog[^>]*id="media-viewer"/);
+  ['media-viewer-close', 'media-viewer-prev', 'media-viewer-next', 'media-viewer-live',
+    'media-viewer-zoom-in', 'media-viewer-zoom-out', 'media-viewer-reset'].forEach(id => {
+    assert.match(html, new RegExp(`id="${id}"`));
+  });
+  assert.ok(html.indexOf('media-viewer.js') < html.indexOf('script.js'));
+});
+
+test('图片渲染为高清查看按钮且实况照片带 LIVE 标记', () => {
+  assert.match(script, /class="media-viewer-trigger"/);
+  assert.match(script, /data-media-viewer-index/);
+  assert.match(script, /live-photo-badge/);
+  assert.match(script, /MediaViewer\.open/);
+});
+
+test('Apple 播放失败调用原生视频回退', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /loadLivePhotosKit/);
+  assert.match(viewer, /addEventListener\(['"]error/);
+  assert.match(viewer, /playFallbackVideo/);
+});

@@ -391,6 +391,23 @@
 
     <dialog class="confirm-dialog" id="confirm-dialog"><form method="dialog"><h2>请确认</h2><p id="confirm-message">确定要删除吗？</p><div><button value="cancel">取消</button><button class="button primary" value="confirm">确定删除</button></div></form></dialog>
 
+    <dialog class="media-viewer" id="media-viewer" aria-labelledby="media-viewer-title">
+      <div class="media-viewer-shell">
+        <h2 class="sr-only" id="media-viewer-title">高清媒体查看器</h2>
+        <button class="media-viewer-close" id="media-viewer-close" type="button" aria-label="关闭高清查看器">×</button>
+        <button class="media-viewer-nav media-viewer-prev" id="media-viewer-prev" type="button" aria-label="上一张">‹</button>
+        <div class="media-viewer-stage" id="media-viewer-stage" aria-live="polite"></div>
+        <button class="media-viewer-nav media-viewer-next" id="media-viewer-next" type="button" aria-label="下一张">›</button>
+        <div class="media-viewer-toolbar" aria-label="图片查看控制">
+          <button id="media-viewer-live" type="button" aria-label="播放实况照片">◉ LIVE</button>
+          <button id="media-viewer-zoom-out" type="button" aria-label="缩小">−</button>
+          <button id="media-viewer-reset" type="button" aria-label="恢复原始大小">100%</button>
+          <button id="media-viewer-zoom-in" type="button" aria-label="放大">＋</button>
+        </div>
+        <p class="media-viewer-status" id="media-viewer-status" role="status" aria-live="polite"></p>
+      </div>
+    </dialog>
+
     <footer class="footer">
       <p>Made for our little trips. 下一版可以继续开发登录、云端保存、地图路线和纪念日提醒。</p>
     </footer>
@@ -398,6 +415,7 @@
     <script src="cloud-data-client.js?v=20260804-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
     <script src="live-photo.js?v=20260830-1"></script>
+    <script src="media-viewer.js?v=20260830-1"></script>
     <script src="record-recovery.js?v=20260828-1"></script>
     <script src="story-data.js?v=20260804-1"></script>
     <script src="china-counties-data.js"></script>
