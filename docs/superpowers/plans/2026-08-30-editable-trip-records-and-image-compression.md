@@ -153,7 +153,7 @@ git commit -m "feat: compress new photo uploads (task 2/4)"
 - 修改：`styles.css`
 - 修改：`tests/story-records-integration.test.js`
 
-- [ ] **步骤 1：编写失败的编辑流程测试**
+- [x] **步骤 1：编写失败的编辑流程测试**
 
 ```js
 test('记录卡片提供编辑入口并按记录 ID 更新', () => {
@@ -168,12 +168,12 @@ test('记录更新成功后才删除被移除的旧照片', () => {
 });
 ```
 
-- [ ] **步骤 2：运行记录测试并确认编辑能力缺失而失败**
+- [x] **步骤 2：运行记录测试并确认编辑能力缺失而失败**
 
 运行：`node --test tests/story-records-integration.test.js`
 预期：FAIL，编辑入口或更新调用断言失败。
 
-- [ ] **步骤 3：实现编辑状态、回填、预览移除和保存顺序**
+- [x] **步骤 3：实现编辑状态、回填、预览移除和保存顺序**
 
 ```js
 let editingRecordId = null;
@@ -199,12 +199,12 @@ function openRecordEditor(recordId) {
 
 新增照片与保留照片合计不得超过 20 项；保存失败时清理本次新上传对象并保留表单；更新成功后再删除旧对象并重新拉取记录。
 
-- [ ] **步骤 4：运行记录与相关回归测试确认通过**
+- [x] **步骤 4：运行记录与相关回归测试确认通过**
 
 运行：`node --test tests/story-records-integration.test.js tests/record-recovery.test.js tests/story-data.test.js tests/live-photo-integration.test.js`
 预期：全部通过，0 failed。
 
-- [ ] **步骤 5：提交任务 3**
+- [x] **步骤 5：提交任务 3**
 
 ```bash
 git add index.html script.js styles.css tests/story-records-integration.test.js

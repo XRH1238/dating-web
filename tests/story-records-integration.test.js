@@ -28,7 +28,8 @@ test('记录失败时保留表单并可确认删除', () => {
 
 test('记录媒体限制为二十个并生成预览', () => {
   assert.match(script, /LivePhotoMedia\.selectMedia\([^,]+,\s*current\.length,\s*20\)/);
-  assert.match(script, /appendDraftMedia\([^,]+,\s*recordDraftFiles,/);
+  assert.match(script, /function appendRecordDraftMedia\(files\)/);
+  assert.match(script, /LivePhotoMedia\.selectMedia\(files,\s*existingCount,\s*20\)/);
   assert.match(script, /record-photo-preview/);
 });
 
@@ -63,8 +64,8 @@ test('日期校验早于照片上传且失败时不会清空表单', () => {
   const submit = script.match(/async function submitRecordForm\(event\)\s*\{([\s\S]*?)\n\}/)[1];
   assert.ok(submit.indexOf('validateRecordDateRange()') < submit.indexOf('uploadStoryFiles'), '应先验证日期再上传照片');
   assert.match(submit, /if\s*\(!date\)\s*return/);
-  assert.match(submit, /clearRecordEditor\(\)/);
-  assert.match(script, /function clearRecordEditor\(\)[\s\S]*?resetRecordDatePicker\(\)/);
+  assert.match(submit, /clearRecordEditor\((?:true)?\)/);
+  assert.match(script, /function clearRecordEditor\(preserveDraft\)[\s\S]*?resetRecordDatePicker\(\)/);
 });
 
 test('记录表单输入会写入本机草稿并在刷新后恢复', () => {
@@ -91,4 +92,39 @@ test('离线保存与网络失败都会生成待同步的本机记录', () => {
   assert.match(script, /RecordRecovery\.createPendingRecord/);
   assert.match(script, /RecordRecovery\.mergeRemoteRecords/);
   assert.match(script, /async function syncPendingRecords\(\)/);
+});
+
+test('记录卡片提供编辑入口并按记录 ID 打开表单', () => {
+  assert.match(script, /data-edit-record-id/);
+  assert.match(script, /function openRecordEditor\(recordId\)/);
+  assert.match(script, /String\(item\.id\)\s*===\s*String\(recordId\)/);
+  assert.match(script, /restoreRecordDateRange\(record\.date\)/);
+  assert.match(script, /MapLabelLayout\.parseDateRange\(value\)/);
+  assert.match(html, /id="record-submit-button"/);
+});
+
+test('编辑模式保留旧媒体并允许移除旧媒体或新增媒体', () => {
+  assert.match(script, /let editingRecordId = null/);
+  assert.match(script, /let recordExistingPhotos = \[\]/);
+  assert.match(script, /let recordRemovedPhotos = \[\]/);
+  assert.match(script, /data-remove-existing-record-media/);
+  assert.match(script, /data-remove-new-record-media/);
+  assert.match(script, /recordExistingPhotos\.length \+ recordDraftFiles\.length/);
+  assert.match(css, /\.record-media-remove/);
+});
+
+test('编辑记录按 ID 更新并在成功后删除被移除的旧照片', () => {
+  const submitStart = script.indexOf('async function submitRecordForm');
+  const deleteStart = script.indexOf('async function deleteRecord', submitStart);
+  const submit = script.slice(submitStart, deleteStart);
+  assert.match(submit, /state\.client\.update\(tables\.records,\s*editingRecordId/);
+  assert.match(submit, /await removeRecordMedia\(recordRemovedPhotos\)/);
+  assert.ok(submit.indexOf('state.client.update') < submit.indexOf('removeRecordMedia(recordRemovedPhotos)'), '必须先更新记录再删除旧媒体');
+  assert.match(script, /cleanupUploadedRecordMedia/);
+});
+
+test('编辑保存期间禁用提交按钮且失败时保留表单', () => {
+  assert.match(script, /recordSubmitButton\.disabled = true/);
+  assert.match(script, /recordSubmitButton\.disabled = false/);
+  assert.match(script, /修改没有成功，原记录没有变化/);
 });

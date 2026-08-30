@@ -70,6 +70,7 @@ const cloudStatus = document.querySelector("#cloud-status");
 const recordPanel = document.querySelector("#record-panel");
 const recordForm = document.querySelector("#record-form");
 const recordDatePicker = document.querySelector("#record-date-picker");
+const recordSubmitButton = document.querySelector("#record-submit-button");
 const capsulePanel = document.querySelector("#capsule-panel");
 const capsuleForm = document.querySelector("#capsule-form");
 const planDateState = {
@@ -87,6 +88,9 @@ const recordDateState = {
   viewMonth: new Date().getMonth() + 1,
 };
 let recordDraftFiles = [];
+let editingRecordId = null;
+let recordExistingPhotos = [];
+let recordRemovedPhotos = [];
 let capsuleDraftFiles = [];
 let capsuleExistingPhotos = [];
 let editingCapsuleIndex = -1;
@@ -179,6 +183,16 @@ async function appendDraftMedia(files, current, previewSelector, statusSelector)
   return next;
 }
 
+async function appendRecordDraftMedia(files) {
+  var existingCount = recordExistingPhotos.length + recordDraftFiles.length;
+  var selection = window.LivePhotoMedia.selectMedia(files, existingCount, 20);
+  recordDraftFiles = recordDraftFiles.concat(selection.items);
+  await renderRecordMediaPreview();
+  var status = document.querySelector("#record-form-status");
+  if (status) status.textContent = mediaSelectionMessage(selection);
+  saveRecordDraft();
+}
+
 function bindMediaDropzone(name, input, receiveFiles) {
   var zone = document.querySelector('[data-media-dropzone="' + name + '"]');
   if (!zone || !input) return;
@@ -269,6 +283,11 @@ function bindEvents() {
   });
   var openRecord = document.querySelector("[data-open-record]");
   if (openRecord) openRecord.addEventListener("click", function() {
+    if (editingRecordId !== null) {
+      clearRecordEditor(true);
+      restoreRecordDraft();
+    }
+    setRecordFormMode("create");
     openPanelById(recordPanel);
     var startButton = recordDatePicker && recordDatePicker.querySelector('[data-record-date-target="start"]');
     if (startButton) startButton.focus();
@@ -281,8 +300,14 @@ function bindEvents() {
   });
   var recordPhotoInput = document.querySelector("#record-photo-input");
   bindMediaDropzone("record", recordPhotoInput, async function(files) {
-    recordDraftFiles = await appendDraftMedia(files, recordDraftFiles, "#record-photo-preview", "#record-form-status");
-    saveRecordDraft();
+    await appendRecordDraftMedia(files);
+  });
+  var recordPhotoPreview = document.querySelector("#record-photo-preview");
+  if (recordPhotoPreview) recordPhotoPreview.addEventListener("click", function(event) {
+    var existingButton = event.target.closest("[data-remove-existing-record-media]");
+    var newButton = event.target.closest("[data-remove-new-record-media]");
+    if (existingButton) removeExistingRecordMedia(Number(existingButton.dataset.removeExistingRecordMedia));
+    if (newButton) removeNewRecordMedia(Number(newButton.dataset.removeNewRecordMedia));
   });
   var addCustomMoodButton = document.querySelector("#add-custom-mood");
   var customMoodInput = document.querySelector("#custom-mood-input");
@@ -727,6 +752,7 @@ function setCloudStatus(status) {
     loading: "⏳ 正在同步云端数据...",
   };
   cloudStatus.textContent = map[status] || "";
+  delete cloudStatus.dataset.status;
   cloudStatus.classList.toggle("is-hidden", !status);
   clearTimeout(cloudStatusTimer);
   if (status === "connected") cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 4000);
@@ -863,6 +889,7 @@ function hasRecordDraftContent(draft) {
 }
 
 function saveRecordDraft() {
+  if (editingRecordId !== null) return;
   if (!state.recordDraftStore) return;
   var draft = collectRecordDraft();
   if (!hasRecordDraftContent(draft)) {
@@ -903,7 +930,16 @@ function restoreRecordDraft() {
     ((draft.photoNames || []).length ? " 照片需要重新选择。" : "");
 }
 
-function clearRecordEditor() {
+function setRecordFormMode(mode) {
+  var editing = mode === "edit";
+  var title = document.querySelector("#record-panel-title");
+  var label = recordPanel && recordPanel.querySelector(".section-label");
+  if (title) title.textContent = editing ? "编辑出游记录" : "写一条出游记录";
+  if (label) label.textContent = editing ? "Edit Memory" : "New Memory";
+  if (recordSubmitButton) recordSubmitButton.textContent = editing ? "保存修改" : "保存这段故事";
+}
+
+function clearRecordEditor(preserveDraft) {
   recordForm.reset();
   document.querySelectorAll('#mood-options [data-custom-mood]').forEach(function(label) { label.remove(); });
   var customMoodInput = document.querySelector("#custom-mood-input");
@@ -912,8 +948,79 @@ function clearRecordEditor() {
   if (moodStatus) moodStatus.textContent = "";
   resetRecordDatePicker();
   recordDraftFiles = [];
+  editingRecordId = null;
+  recordExistingPhotos = [];
+  recordRemovedPhotos = [];
   document.querySelector("#record-photo-preview").innerHTML = "";
-  if (state.recordDraftStore) state.recordDraftStore.clear();
+  setRecordFormMode("create");
+  if (!preserveDraft && state.recordDraftStore) state.recordDraftStore.clear();
+}
+
+function restoreRecordDateRange(value) {
+  var range = window.MapLabelLayout.parseDateRange(value);
+  if (!range.valid) {
+    resetRecordDatePicker();
+    return;
+  }
+  recordDateState.active = "start";
+  recordDateState.start = recordDateEntryFromIso(range.start);
+  recordDateState.end = recordDateEntryFromIso(range.end);
+  var parts = range.start.split("-");
+  recordDateState.viewYear = Number(parts[0]);
+  recordDateState.viewMonth = Number(parts[1]);
+  renderRecordDatePicker();
+}
+
+async function renderRecordMediaPreview() {
+  var target = document.querySelector("#record-photo-preview");
+  if (!target) return;
+  var draftMedia = await Promise.all(recordDraftFiles.map(localMediaRef));
+  var existingMarkup = recordExistingPhotos.map(function(media, index) {
+    return '<div class="record-media-preview-item"><span class="record-media-origin">已保存</span>' +
+      mediaElementMarkup(media, media.name || "已保存媒体", true) +
+      '<button class="record-media-remove" type="button" data-remove-existing-record-media="' + index + '" aria-label="移除已保存媒体">×</button></div>';
+  }).join("");
+  var draftMarkup = draftMedia.map(function(media, index) {
+    return '<div class="record-media-preview-item"><span class="record-media-origin">待上传</span>' +
+      mediaElementMarkup(media, media.name || "待上传媒体", true) +
+      '<button class="record-media-remove" type="button" data-remove-new-record-media="' + index + '" aria-label="移除待上传媒体">×</button></div>';
+  }).join("");
+  target.innerHTML = existingMarkup + draftMarkup;
+}
+
+function removeExistingRecordMedia(index) {
+  if (index < 0 || index >= recordExistingPhotos.length) return;
+  recordRemovedPhotos.push(recordExistingPhotos.splice(index, 1)[0]);
+  renderRecordMediaPreview();
+}
+
+function removeNewRecordMedia(index) {
+  if (index < 0 || index >= recordDraftFiles.length) return;
+  recordDraftFiles.splice(index, 1);
+  renderRecordMediaPreview();
+  saveRecordDraft();
+}
+
+function openRecordEditor(recordId) {
+  var record = state.records.find(function(item) { return String(item.id) === String(recordId); });
+  if (!record) return;
+  saveRecordDraft();
+  editingRecordId = record.id;
+  recordExistingPhotos = Array.isArray(record.photos) ? record.photos.slice() : [];
+  recordRemovedPhotos = [];
+  recordDraftFiles = [];
+  recordForm.reset();
+  recordForm.elements.city.value = record.city || "";
+  recordForm.elements.title.value = record.title || "";
+  recordForm.elements.description.value = record.description || "";
+  restoreMoodOptions(record.moods || []);
+  restoreRecordDateRange(record.date);
+  setRecordFormMode("edit");
+  var status = document.querySelector("#record-form-status");
+  if (status) status.textContent = "";
+  renderRecordMediaPreview();
+  openPanelById(recordPanel);
+  recordForm.elements.city.focus();
 }
 
 function createLocalRecordId() {
@@ -1093,10 +1200,43 @@ async function uploadMediaItem(item, folder, index) {
 async function uploadStoryFiles(files, folder) {
   var refs = [];
   resetUploadCompressionStats();
-  for (var i = 0; i < files.length; i++) {
-    refs.push(await uploadMediaItem(files[i], folder, i));
+  try {
+    for (var i = 0; i < files.length; i++) {
+      refs.push(await uploadMediaItem(files[i], folder, i));
+    }
+  } catch (error) {
+    error.uploadedMedia = refs;
+    throw error;
   }
   return refs;
+}
+
+function recordMediaPaths(items) {
+  var paths = [];
+  (items || []).forEach(function(item) {
+    if (item && item.path) paths.push(item.path);
+    if (item && item.motion_path) paths.push(item.motion_path);
+  });
+  return Array.from(new Set(paths));
+}
+
+async function removeRecordMedia(items) {
+  var paths = recordMediaPaths(items);
+  if (paths.length) await state.client.removeObjects(storageBucket, paths);
+}
+
+async function cleanupUploadedRecordMedia(items) {
+  try { await removeRecordMedia(items); }
+  catch (_) {}
+}
+
+function showCloudNotice(message, isError) {
+  if (!cloudStatus) return;
+  cloudStatus.textContent = message;
+  cloudStatus.dataset.status = isError ? "error" : "success";
+  cloudStatus.classList.remove("is-hidden");
+  clearTimeout(cloudStatusTimer);
+  cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 7000);
 }
 
 function viewerMediaItems(items) {
@@ -1155,10 +1295,51 @@ async function submitRecordForm(event) {
   if (!date) return;
   var fd = new FormData(recordForm);
   var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
-    description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: [],
-    created_at: new Date().toISOString() };
+    description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: [] };
+  if (recordExistingPhotos.length + recordDraftFiles.length > 20) {
+    status.textContent = "每条记录最多保留 20 个媒体项目，请先移除一些照片或视频。";
+    return;
+  }
+  if (recordSubmitButton) recordSubmitButton.disabled = true;
   var uploadedPhotos = null;
   var inserted = false;
+  if (editingRecordId !== null) {
+    if (!state.backendReady || !state.client) {
+      status.textContent = "修改需要连接云端，表单内容仍保留，请检查网络后重试。";
+      if (recordSubmitButton) recordSubmitButton.disabled = false;
+      return;
+    }
+    try {
+      status.textContent = "正在保存修改...";
+      uploadedPhotos = await uploadStoryFiles(recordDraftFiles, "records");
+      entry.photos = recordExistingPhotos.concat(uploadedPhotos);
+      await state.client.update(tables.records, editingRecordId, entry);
+    } catch (error) {
+      var partiallyUploaded = uploadedPhotos || error.uploadedMedia || [];
+      if (partiallyUploaded.length) await cleanupUploadedRecordMedia(partiallyUploaded);
+      state.backendReady = false;
+      setCloudStatus("offline");
+      status.textContent = "修改没有成功，原记录没有变化。表单内容仍保留，请检查网络后重试。";
+      if (recordSubmitButton) recordSubmitButton.disabled = false;
+      return;
+    }
+    var removalWarning = false;
+    try { await removeRecordMedia(recordRemovedPhotos); }
+    catch (_) { removalWarning = true; }
+    try { await fetchRecords(); }
+    catch (_) {
+      var localRecord = state.records.find(function(item) { return String(item.id) === String(editingRecordId); });
+      if (localRecord) Object.assign(localRecord, entry);
+    }
+    clearRecordEditor(true);
+    restoreRecordDraft();
+    closePanelById(recordPanel);
+    renderAll();
+    showCloudNotice(removalWarning ? "修改已保存，但有部分旧文件暂未清理。" : "出游记录已更新。", removalWarning);
+    if (recordSubmitButton) recordSubmitButton.disabled = false;
+    return;
+  }
+  entry.created_at = new Date().toISOString();
   try {
     status.textContent = "正在保存这段故事...";
     if (state.backendReady) {
@@ -1171,6 +1352,7 @@ async function submitRecordForm(event) {
       status.textContent = "";
       closePanelById(recordPanel);
       renderAll();
+      if (recordSubmitButton) recordSubmitButton.disabled = false;
       return;
     }
     entry.photos = await localStoryPhotoRefs(recordDraftFiles);
@@ -1182,6 +1364,7 @@ async function submitRecordForm(event) {
       renderAll();
       clearRecordEditor();
       closePanelById(recordPanel);
+      if (recordSubmitButton) recordSubmitButton.disabled = false;
       return;
     }
     try {
@@ -1189,6 +1372,8 @@ async function submitRecordForm(event) {
       if (persistPendingRecord(entry, status)) return;
     } catch (_) {}
     status.textContent = "保存没有成功，草稿仍保存在本机。请复制文字并检查网络后重试。";
+  } finally {
+    if (recordSubmitButton) recordSubmitButton.disabled = false;
   }
 }
 
@@ -1551,7 +1736,9 @@ function renderRecords() {
     var originalIndex = r._sourceIndex;
     var viewerItems = viewerMediaItems(r.photos);
     return '<article class="story-card"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
-      escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div><p class="story-card-description">' +
+      escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><div class="story-card-actions">' +
+      (r.id ? '<button class="story-edit" type="button" data-edit-record-id="' + escapeHtml(String(r.id)) + '" aria-label="编辑记录">编辑</button>' : '') +
+      '<button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div></div><p class="story-card-description">' +
       escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
       (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) {
         return mediaElementMarkup(photo, photo.name || r.title || "旅行媒体", false, viewerItems.indexOf(photo));
@@ -1562,6 +1749,9 @@ function renderRecords() {
     registerMediaViewerGroup(group, recordMediaGroups[index].photos);
   });
   list.querySelectorAll("[data-delete-record]").forEach(function(button) { button.addEventListener("click", function() { deleteRecord(parseInt(button.dataset.deleteRecord)); }); });
+  list.querySelectorAll("[data-edit-record-id]").forEach(function(button) {
+    button.addEventListener("click", function() { openRecordEditor(button.dataset.editRecordId); });
+  });
 }
 
 function renderCapsules() {
