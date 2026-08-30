@@ -233,7 +233,7 @@ git commit -m "feat: edit trip records and photos (task 3/4)"
 
 执行说明：内置浏览器的 URL 安全策略阻止自动控制本机地址，因此不绕过限制；推送后在 HTTPS 线上页面执行等价的只读交互验收，不点击“保存修改”，不改变真实记录。
 
-- [ ] **步骤 4：提交最终计划状态并推送**
+- [x] **步骤 4：提交最终计划状态并推送**
 
 ```bash
 git add docs/superpowers/plans/2026-08-30-editable-trip-records-and-image-compression.md index.html
@@ -241,6 +241,6 @@ git commit -m "chore: verify editable trip records (task 4/4)"
 git push origin master
 ```
 
-- [ ] **步骤 5：检查 GitHub Pages**
+- [x] **步骤 5：检查 GitHub Pages 部署状态**
 
-打开 `https://xrh1238.github.io/dating-web/#records`，确认新资源版本已部署、编辑按钮可见，且高清查看器仍可缩放和拖动。只读检查线上页面，不创建或修改真实记录。
+打开 `https://xrh1238.github.io/dating-web/#records`，确认新资源版本已部署。线上 HTML 已确认引用 `20260830-6` 版本资源；内置浏览器自动交互连续两次超时，因此没有把“编辑按钮可见、高清查看器可缩放和拖动”记为自动浏览器验收通过。对应行为由完整自动化测试覆盖，页面已交给用户进行最终可视检查，且未创建或修改真实记录。
