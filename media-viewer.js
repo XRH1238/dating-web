@@ -14,6 +14,11 @@
   var fallbackVideo = null;
   var holdTimer = null;
   var holdPlaying = false;
+  var dragPointerId = null;
+  var dragStartX = 0;
+  var dragStartY = 0;
+  var dragOriginX = 0;
+  var dragOriginY = 0;
 
   function normalizeIndex(index, count) {
     if (!count) return 0;
@@ -26,6 +31,8 @@
       items: mediaItems,
       index: normalizeIndex(index, mediaItems.length),
       scale: 1,
+      x: 0,
+      y: 0,
       appleFailed: false,
     };
   }
@@ -35,12 +42,31 @@
     return Object.assign({}, state, {
       index: normalizeIndex(state.index + (Number(delta) || 0), state.items.length),
       scale: 1,
+      x: 0,
+      y: 0,
       appleFailed: false,
     });
   }
 
   function clampScale(value) {
-    return Math.min(5, Math.max(1, Number(value) || 1));
+    var numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) numericValue = 1;
+    return Math.min(5, Math.max(0.25, numericValue));
+  }
+
+  function clampPan(position, scale, bounds) {
+    var safeScale = clampScale(scale);
+    var width = Math.max(0, Number(bounds && bounds.width) || 0);
+    var height = Math.max(0, Number(bounds && bounds.height) || 0);
+    if (safeScale <= 1) return { x: 0, y: 0 };
+    var maxX = width * (safeScale - 1) / 2;
+    var maxY = height * (safeScale - 1) / 2;
+    var x = Number(position && position.x) || 0;
+    var y = Number(position && position.y) || 0;
+    return {
+      x: Math.min(maxX, Math.max(-maxX, x)),
+      y: Math.min(maxY, Math.max(-maxY, y)),
+    };
   }
 
   function canPlayLive(media) {
@@ -105,11 +131,24 @@
     fallbackVideo = null;
   }
 
+  function stageBounds() {
+    if (!elements || !elements.stage) return { width: 0, height: 0 };
+    return {
+      width: elements.stage.clientWidth || 0,
+      height: elements.stage.clientHeight || 0,
+    };
+  }
+
   function applyScale() {
     if (!elements) return;
     var media = elements.stage.querySelector('.media-viewer-media');
-    if (media) media.style.setProperty('--media-scale', String(viewerState.scale));
+    if (media) {
+      media.style.setProperty('--media-scale', String(viewerState.scale));
+      media.style.setProperty('--media-x', (viewerState.x || 0) + 'px');
+      media.style.setProperty('--media-y', (viewerState.y || 0) + 'px');
+    }
     elements.reset.textContent = Math.round(viewerState.scale * 100) + '%';
+    elements.stage.classList.toggle('is-zoomed', viewerState.scale > 1);
   }
 
   function renderCurrent() {
@@ -123,6 +162,7 @@
     image.src = media.url;
     image.alt = media.name || '高清照片';
     image.decoding = 'async';
+    image.draggable = false;
     elements.stage.appendChild(image);
     elements.live.hidden = !canPlayLive(media);
     elements.prev.hidden = viewerState.items.length < 2;
@@ -141,6 +181,7 @@
     video.poster = media.url;
     video.playsInline = true;
     video.controls = true;
+    video.draggable = false;
     video.preload = 'metadata';
     elements.stage.appendChild(video);
     fallbackVideo = video;
@@ -198,7 +239,14 @@
   }
 
   function zoomBy(delta) {
-    viewerState = Object.assign({}, viewerState, { scale: clampScale(viewerState.scale + delta) });
+    var scale = clampScale(viewerState.scale + delta);
+    var position = clampPan(viewerState, scale, stageBounds());
+    viewerState = Object.assign({}, viewerState, { scale: scale, x: position.x, y: position.y });
+    applyScale();
+  }
+
+  function resetView() {
+    viewerState = Object.assign({}, viewerState, { scale: 1, x: 0, y: 0 });
     applyScale();
   }
 
@@ -220,14 +268,20 @@
     elements.live.addEventListener('click', playLive);
     elements.zoomIn.addEventListener('click', function () { zoomBy(0.5); });
     elements.zoomOut.addEventListener('click', function () { zoomBy(-0.5); });
-    elements.reset.addEventListener('click', function () {
-      viewerState = Object.assign({}, viewerState, { scale: 1 });
-      applyScale();
-    });
+    elements.reset.addEventListener('click', resetView);
     elements.dialog.addEventListener('cancel', function (event) { event.preventDefault(); close(); });
     elements.dialog.addEventListener('click', function (event) { if (event.target === elements.dialog) close(); });
+    elements.stage.addEventListener('dragstart', function (event) { event.preventDefault(); });
     elements.stage.addEventListener('pointerdown', function (event) {
-      if (!canPlayLive(currentMedia()) || event.button > 0) return;
+      if (event.button > 0 || !elements.stage.querySelector('.media-viewer-media')) return;
+      dragPointerId = event.pointerId;
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+      dragOriginX = viewerState.x || 0;
+      dragOriginY = viewerState.y || 0;
+      if (elements.stage.setPointerCapture) elements.stage.setPointerCapture(event.pointerId);
+      elements.stage.classList.add('is-panning');
+      if (!canPlayLive(currentMedia())) return;
       holdPlaying = false;
       holdTimer = root.setTimeout(function () {
         holdTimer = null;
@@ -235,16 +289,37 @@
         playLive();
       }, 350);
     });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (type) {
+    elements.stage.addEventListener('pointermove', function (event) {
+      if (event.pointerId !== dragPointerId) return;
+      var dx = event.clientX - dragStartX;
+      var dy = event.clientY - dragStartY;
+      if (Math.abs(dx) + Math.abs(dy) > 6 && holdTimer) {
+        root.clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      if (viewerState.scale <= 1) return;
+      var position = clampPan({ x: dragOriginX + dx, y: dragOriginY + dy }, viewerState.scale, stageBounds());
+      viewerState = Object.assign({}, viewerState, { x: position.x, y: position.y });
+      applyScale();
+      event.preventDefault();
+    });
+    ['pointerup', 'pointercancel'].forEach(function (type) {
       elements.stage.addEventListener(type, function () {
         if (holdTimer) root.clearTimeout(holdTimer);
         holdTimer = null;
+        dragPointerId = null;
+        elements.stage.classList.remove('is-panning');
         if (holdPlaying) {
           holdPlaying = false;
           stopPlayback();
           renderCurrent();
         }
       });
+    });
+    root.addEventListener('resize', function () {
+      var position = clampPan(viewerState, viewerState.scale, stageBounds());
+      viewerState = Object.assign({}, viewerState, { x: position.x, y: position.y });
+      applyScale();
     });
     elements.document.addEventListener('keydown', function (event) {
       if (!elements.dialog.open) return;
@@ -298,6 +373,7 @@
     createState: createState,
     move: move,
     clampScale: clampScale,
+    clampPan: clampPan,
     canPlayLive: canPlayLive,
     markAppleFailed: markAppleFailed,
     loadLivePhotosKit: loadLivePhotosKit,

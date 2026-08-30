@@ -72,11 +72,13 @@ test('Apple 播放失败调用原生视频回退', () => {
   assert.match(viewer, /loadLivePhotosKit/);
   assert.match(viewer, /addEventListener\(['"]error/);
   assert.match(viewer, /playFallbackVideo/);
+  assert.match(viewer, /image\.draggable\s*=\s*false/);
+  assert.match(viewer, /addEventListener\(['"]dragstart['"]/);
   assert.match(viewer, /event\.key === ['"]Escape['"][\s\S]*close\(\)/);
 });
 
 test('本次媒体功能使用一致的新缓存版本', () => {
   ['styles.css', 'live-photo.js', 'media-viewer.js', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-2'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-5'));
   });
 });

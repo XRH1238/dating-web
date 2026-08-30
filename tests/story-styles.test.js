@@ -7,6 +7,9 @@ const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 test('高清查看器全屏显示原图并提供清晰焦点', () => {
   assert.match(css, /\.media-viewer\s*\{[^}]*width:\s*100vw[^}]*height:\s*100dvh/s);
   assert.match(css, /\.media-viewer-stage img[^}]*object-fit:\s*contain/s);
+  assert.match(css, /\.media-viewer-stage\s*\{[^}]*position:\s*relative/s);
+  assert.match(css, /\.media-viewer-stage img[^}]*position:\s*absolute[^}]*inset:\s*0/s);
+  assert.match(css, /\.media-viewer-media\s*\{[^}]*-webkit-user-drag:\s*none/s);
   assert.match(css, /\.media-viewer-trigger:focus-visible/);
   assert.match(css, /\.live-photo-badge/);
 });
