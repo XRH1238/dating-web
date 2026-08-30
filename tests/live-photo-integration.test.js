@@ -26,3 +26,27 @@ test('本地预览引用保留实况照片的静态图和动态资源', () => {
   assert.match(script, /motion_type:/);
   assert.match(script, /motion_url:/);
 });
+
+test('相册迁移增加实况照片可空字段', () => {
+  const sqlPath = path.join(root, 'supabase', 'live-photo-gallery.sql');
+  assert.equal(fs.existsSync(sqlPath), true, '应创建相册实况照片迁移');
+  const sql = fs.readFileSync(sqlPath, 'utf8');
+  ['type', 'media_kind', 'motion_name', 'motion_type', 'motion_path', 'motion_url'].forEach(column => {
+    assert.match(sql, new RegExp(`add column if not exists ${column}\\s+text`, 'i'));
+  });
+});
+
+test('实况照片上传双资源并保存完整引用', () => {
+  assert.match(script, /async function uploadMediaItem\(item, folder, index\)/);
+  assert.match(script, /item\.photoFile/);
+  assert.match(script, /item\.motionFile/);
+  assert.match(script, /motion_path:/);
+  assert.match(script, /motion_url:/);
+  assert.match(script, /云端尚未启用实况照片字段/);
+});
+
+test('待同步的本地实况照片会同时上传两份资源', () => {
+  assert.match(script, /async function uploadPendingMediaRef\(photo, localId, index\)/);
+  assert.match(script, /photo\.motion_url/);
+  assert.match(script, /motion_path/);
+});

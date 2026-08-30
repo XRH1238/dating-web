@@ -958,21 +958,37 @@ function persistPendingRecord(entry, status) {
 }
 
 async function uploadPendingRecordPhotos(photos, localId) {
-  var uploaded = [];
-  for (var i = 0; i < (photos || []).length; i++) {
-    var photo = photos[i];
-    if (!photo.url || !photo.url.startsWith("data:")) {
-      uploaded.push(photo);
-      continue;
-    }
-    var response = await fetch(photo.url);
-    var blob = await response.blob();
-    var name = photo.name || ("photo-" + (i + 1) + ".jpg");
-    var path = "records/" + localId + "-" + i + "-" + name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    await state.client.upload(storageBucket, path, blob);
-    uploaded.push({ name: name, type: photo.type || blob.type, path: path, url: state.client.getPublicUrl(storageBucket, path) });
+  return Promise.all((photos || []).map(function(photo, index) {
+    return uploadPendingMediaRef(photo, localId, index);
+  }));
+}
+
+async function uploadDataUrlResource(url, path) {
+  var response = await fetch(url);
+  var blob = await response.blob();
+  await state.client.upload(storageBucket, path, blob);
+  return { blob: blob, url: state.client.getPublicUrl(storageBucket, path) };
+}
+
+async function uploadPendingMediaRef(photo, localId, index) {
+  var ref = Object.assign({}, photo);
+  if (ref.url && ref.url.startsWith("data:")) {
+    var name = ref.name || ("photo-" + (index + 1) + ".jpg");
+    var path = "records/" + localId + "-" + index + "-" + safeMediaFileName(name);
+    var uploadedPhoto = await uploadDataUrlResource(ref.url, path);
+    ref.path = path;
+    ref.url = uploadedPhoto.url;
+    ref.type = ref.type || uploadedPhoto.blob.type;
   }
-  return uploaded;
+  if (ref.motion_url && ref.motion_url.startsWith("data:")) {
+    var motionName = ref.motion_name || ("motion-" + (index + 1) + ".mov");
+    var motionPath = "records/" + localId + "-" + index + "-" + safeMediaFileName(motionName);
+    var uploadedMotion = await uploadDataUrlResource(ref.motion_url, motionPath);
+    ref.motion_path = motionPath;
+    ref.motion_url = uploadedMotion.url;
+    ref.motion_type = ref.motion_type || uploadedMotion.blob.type;
+  }
+  return ref;
 }
 
 async function syncPendingRecords() {
@@ -1009,17 +1025,37 @@ async function saveRecord(entry) {
   return true;
 }
 
+function safeMediaFileName(name) {
+  return String(name || "media").replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+async function uploadMediaItem(item, folder, index) {
+  if (!state.backendReady) return localMediaRef(item);
+  var stamp = Date.now() + "-" + index;
+  var photoFile = item.kind === "live-photo" ? item.photoFile : item.file;
+  var path = folder + "/" + stamp + "-" + safeMediaFileName(photoFile.name);
+  await state.client.upload(storageBucket, path, photoFile);
+  var ref = {
+    kind: item.kind,
+    name: photoFile.name,
+    type: photoFile.type,
+    path: path,
+    url: state.client.getPublicUrl(storageBucket, path),
+  };
+  if (item.kind !== "live-photo") return ref;
+  var motionPath = folder + "/" + stamp + "-" + safeMediaFileName(item.motionFile.name);
+  await state.client.upload(storageBucket, motionPath, item.motionFile);
+  ref.motion_name = item.motionFile.name;
+  ref.motion_type = item.motionFile.type;
+  ref.motion_path = motionPath;
+  ref.motion_url = state.client.getPublicUrl(storageBucket, motionPath);
+  return ref;
+}
+
 async function uploadStoryFiles(files, folder) {
   var refs = [];
   for (var i = 0; i < files.length; i++) {
-    var file = files[i];
-    if (state.backendReady) {
-      var path = folder + "/" + Date.now() + "-" + i + "-" + file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-      await state.client.upload(storageBucket, path, file);
-      refs.push({ name: file.name, type: file.type, path: path, url: state.client.getPublicUrl(storageBucket, path) });
-    } else {
-      refs.push({ name: file.name, type: file.type, url: await fileToDataUrl(file) });
-    }
+    refs.push(await uploadMediaItem(files[i], folder, i));
   }
   return refs;
 }
@@ -1208,7 +1244,12 @@ async function deleteTodo(index) {
 
 // ========== Photos ==========
 async function fetchPhotos() {
-  state.photos = await state.client.select(tables.photos);
+  var photos = await state.client.select(tables.photos);
+  state.photos = photos.map(function(photo) {
+    return Object.assign({}, photo, {
+      kind: photo.media_kind || (photo.motion_url ? "live-photo" : (window.MediaUpload.isVideo(photo) ? "video" : "image")),
+    });
+  });
 }
 
 function fileToDataUrl(file) {
@@ -1220,30 +1261,47 @@ function fileToDataUrl(file) {
   });
 }
 
-async function uploadPhotos(files) {
-  if (!files || !files.length) return;
+async function uploadPhotos(items) {
+  if (!items || !items.length) return;
   var city = photoCityInput ? photoCityInput.value.trim() : "";
-  for (var i = 0; i < files.length; i++) {
-    var file = files[i];
-    var entry = { name: file.name, created_at: new Date().toISOString() };
+  var status = document.querySelector("#gallery-media-status");
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var entry;
     if (state.backendReady) {
       try {
         var resolvedCity = resolveCity(city);
         var folder = resolvedCity ? resolvedCity.name : "unplaced";
-        var path = folder + "/" + Date.now() + "-" + file.name;
-        await state.client.upload(storageBucket, path, file);
-        entry.path = path;
-        entry.url = state.client.getPublicUrl(storageBucket, path);
-        await state.client.insert(tables.photos, [entry]);
+        entry = await uploadMediaItem(item, folder, i);
+        var cloudEntry = {
+          name: entry.name,
+          path: entry.path,
+          url: entry.url,
+          created_at: new Date().toISOString(),
+        };
+        if (entry.kind === "live-photo") {
+          Object.assign(cloudEntry, {
+            type: entry.type,
+            media_kind: entry.kind,
+            motion_name: entry.motion_name,
+            motion_type: entry.motion_type,
+            motion_path: entry.motion_path,
+            motion_url: entry.motion_url,
+          });
+        }
+        await state.client.insert(tables.photos, [cloudEntry]);
       } catch (_) {
+        if (item.kind === "live-photo" && status) {
+          status.textContent = "云端尚未启用实况照片字段，请先执行数据库迁移；照片已保留在本机。";
+        }
         state.backendReady = false;
-        entry.url = await fileToDataUrl(file);
+        entry = await localMediaRef(item);
         setCloudStatus("offline");
       }
     } else {
-      entry.url = await fileToDataUrl(file);
+      entry = await localMediaRef(item);
     }
-    entry.type = file.type;
+    entry.created_at = new Date().toISOString();
     state.photos.unshift(entry);
   }
   if (photoCityInput) photoCityInput.value = "";
