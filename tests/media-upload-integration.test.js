@@ -20,13 +20,14 @@ test('三个入口都接受多选照片和视频并使用拖拽区', () => {
 test('媒体核心脚本在主脚本之前加载', () => {
   assert.ok(html.indexOf('media-upload.js') >= 0);
   assert.ok(html.indexOf('media-upload.js') < html.indexOf('script.js'));
+  assert.ok(html.indexOf('live-photo.js') < html.indexOf('script.js'));
 });
 
 test('拖拽绑定、媒体渲染和高亮样式存在', () => {
   assert.match(script, /function bindMediaDropzone\(/);
   assert.match(script, /var queuedFiles = Array\.from\(files \|\| \[\]\)/);
   assert.match(script, /文件读取失败，请重新选择照片或视频/);
-  assert.match(script, /window\.MediaUpload\.selectFiles/);
+  assert.match(script, /window\.LivePhotoMedia\.selectMedia/);
   assert.match(script, /window\.MediaUpload\.isVideo/);
   assert.match(script, /<video[^>]*controls[^>]*preload="metadata"/);
   assert.match(script, /<img[^>]*loading="lazy"/);

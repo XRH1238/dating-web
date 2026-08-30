@@ -244,6 +244,7 @@
           <span class="media-dropzone-icon" aria-hidden="true">⇩</span>
           <strong>拖入照片或视频</strong>
           <span>点击选择文件，每次最多 20 个文件</span>
+          <span>实况照片请同时选择原图和同名 MOV 文件</span>
         </label>
         <p class="media-upload-status" id="gallery-media-status" role="status" aria-live="polite"></p>
         <div class="gallery-grid" id="gallery-grid" aria-live="polite"></div>
@@ -358,6 +359,7 @@
           <label class="story-upload media-dropzone media-dropzone-compact" data-media-dropzone="record" for="record-photo-input">
             <input class="media-input" id="record-photo-input" name="photos" type="file" accept="image/*,video/*" multiple />
             <strong>添加照片或视频</strong><span>点击选择或拖到这里，最多 20 个照片或视频</span>
+            <span>实况照片请同时选择原图和同名 MOV 文件</span>
           </label>
           <div class="story-photo-preview" id="record-photo-preview" aria-live="polite"></div>
           <p class="form-status" id="record-form-status" role="status"></p>
@@ -377,6 +379,7 @@
           <label class="story-upload media-dropzone media-dropzone-compact" data-media-dropzone="capsule" for="capsule-photo-input">
             <input class="media-input" id="capsule-photo-input" name="photos" type="file" accept="image/*,video/*" multiple />
             <strong>放入照片或视频</strong><span>点击选择或拖到这里，最多 20 个照片或视频</span>
+            <span>实况照片请同时选择原图和同名 MOV 文件</span>
           </label>
           <div class="story-photo-preview" id="capsule-photo-preview" aria-live="polite"></div>
           <input name="capsule_id" type="hidden" />
@@ -394,6 +397,7 @@
 
     <script src="cloud-data-client.js?v=20260804-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
+    <script src="live-photo.js?v=20260830-1"></script>
     <script src="record-recovery.js?v=20260828-1"></script>
     <script src="story-data.js?v=20260804-1"></script>
     <script src="china-counties-data.js"></script>

@@ -27,7 +27,7 @@ test('记录失败时保留表单并可确认删除', () => {
 });
 
 test('记录媒体限制为二十个并生成预览', () => {
-  assert.match(script, /MediaUpload\.selectFiles\([^,]+,\s*current\.length,\s*20\)/);
+  assert.match(script, /LivePhotoMedia\.selectMedia\([^,]+,\s*current\.length,\s*20\)/);
   assert.match(script, /appendDraftMedia\([^,]+,\s*recordDraftFiles,/);
   assert.match(script, /record-photo-preview/);
 });

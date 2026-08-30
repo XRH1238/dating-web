@@ -161,14 +161,16 @@ async function init() {
 
 function mediaSelectionMessage(selection) {
   var messages = [];
+  if (selection.pairedCount) messages.push("已识别 " + selection.pairedCount + " 张实况照片。");
+  if (selection.unmatchedMotionCount) messages.push("有 " + selection.unmatchedMotionCount + " 个 MOV 未找到同名照片，已按普通视频添加。");
   if (selection.rejectedCount) messages.push("已忽略 " + selection.rejectedCount + " 个非照片或视频文件。");
-  if (selection.overflowCount) messages.push("每次最多 20 个文件，已忽略 " + selection.overflowCount + " 个超限文件。");
+  if (selection.overflowCount) messages.push("每次最多 20 个媒体项目，已忽略 " + selection.overflowCount + " 个超限项目。");
   return messages.join(" ");
 }
 
 async function appendDraftMedia(files, current, previewSelector, statusSelector) {
-  var selection = window.MediaUpload.selectFiles(files, current.length, 20);
-  var next = current.concat(selection.files);
+  var selection = window.LivePhotoMedia.selectMedia(files, current.length, 20);
+  var next = current.concat(selection.items);
   await renderFilePreview(next, previewSelector);
   var status = document.querySelector(statusSelector);
   if (status) status.textContent = mediaSelectionMessage(selection);
@@ -257,10 +259,10 @@ function bindEvents() {
     });
   });
   bindMediaDropzone("gallery", photoInput, async function(files) {
-    var selection = window.MediaUpload.selectFiles(files, 0, 20);
+    var selection = window.LivePhotoMedia.selectMedia(files, 0, 20);
     var status = document.querySelector("#gallery-media-status");
     if (status) status.textContent = mediaSelectionMessage(selection);
-    await uploadPhotos(selection.files);
+    await uploadPhotos(selection.items);
   });
   var openRecord = document.querySelector("[data-open-record]");
   if (openRecord) openRecord.addEventListener("click", function() {
@@ -802,7 +804,9 @@ function collectRecordDraft() {
     moods: fd.getAll("moods"),
     startDate: recordDateState.start.iso,
     endDate: recordDateState.end.iso,
-    photoNames: recordDraftFiles.map(function(file) { return file.name; }),
+    photoNames: recordDraftFiles.map(function(item) {
+      return item.kind === "live-photo" ? item.photoFile.name : item.file.name;
+    }),
   };
 }
 
@@ -914,10 +918,28 @@ function createLocalRecordId() {
   return "record-" + Date.now() + "-" + Math.random().toString(16).slice(2);
 }
 
-async function localStoryPhotoRefs(files) {
-  return Promise.all(files.map(async function(file) {
-    return { name: file.name, type: file.type, url: await fileToDataUrl(file) };
-  }));
+async function localMediaRef(item) {
+  if (item.kind === "live-photo") {
+    return {
+      kind: "live-photo",
+      name: item.photoFile.name,
+      type: item.photoFile.type,
+      url: await fileToDataUrl(item.photoFile),
+      motion_name: item.motionFile.name,
+      motion_type: item.motionFile.type,
+      motion_url: await fileToDataUrl(item.motionFile),
+    };
+  }
+  return {
+    kind: item.kind,
+    name: item.file.name,
+    type: item.file.type,
+    url: await fileToDataUrl(item.file),
+  };
+}
+
+async function localStoryPhotoRefs(items) {
+  return Promise.all(items.map(localMediaRef));
 }
 
 function persistPendingRecord(entry, status) {
@@ -1014,9 +1036,7 @@ function mediaElementMarkup(media, alt, preview) {
 async function renderFilePreview(files, selector) {
   var target = document.querySelector(selector);
   if (!target) return;
-  var media = await Promise.all(files.map(async function(file) {
-    return { name: file.name, type: file.type, url: await fileToDataUrl(file) };
-  }));
+  var media = await Promise.all(files.map(localMediaRef));
   target.innerHTML = media.map(function(item, index) {
     return mediaElementMarkup(item, "待上传媒体 " + (index + 1), true);
   }).join("");
