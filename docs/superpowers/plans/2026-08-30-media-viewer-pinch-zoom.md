@@ -26,7 +26,7 @@
 - 修改：`tests/media-viewer.test.js`
 - 修改：`media-viewer.js`
 
-- [ ] **步骤 1：编写失败的手势几何测试**
+- [x] **步骤 1：编写失败的手势几何测试**
 
 ```js
 test('双指距离和中点计算使用有效坐标', () => {
@@ -56,12 +56,12 @@ test('焦点缩放继续限制缩放和平移边界', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并确认因新函数缺失而失败**
+- [x] **步骤 2：运行测试并确认因新函数缺失而失败**
 
 运行：`node --test tests/media-viewer.test.js`
 预期：FAIL，指出 `Viewer.pointerDistance` 或 `Viewer.zoomAroundPoint` 不是函数。
 
-- [ ] **步骤 3：实现最少的几何函数并导出**
+- [x] **步骤 3：实现最少的几何函数并导出**
 
 ```js
 function pointerDistance(a, b) {
@@ -98,12 +98,12 @@ function zoomAroundPoint(state, nextScale, focal, bounds) {
 
 将 `pointerDistance`、`pointerMidpoint` 和 `zoomAroundPoint` 加入模块返回对象。
 
-- [ ] **步骤 4：运行单元测试确认通过**
+- [x] **步骤 4：运行单元测试确认通过**
 
 运行：`node --test tests/media-viewer.test.js`
 预期：全部通过，0 failed。
 
-- [ ] **步骤 5：提交任务 1**
+- [x] **步骤 5：提交任务 1**
 
 ```bash
 git add media-viewer.js tests/media-viewer.test.js

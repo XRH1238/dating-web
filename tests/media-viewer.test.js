@@ -32,6 +32,44 @@ test('放大后平移被限制在仍能看到照片的范围内', () => {
   );
 });
 
+test('双指距离和中点计算使用有效坐标', () => {
+  assert.equal(Viewer.pointerDistance({ x: 0, y: 0 }, { x: 3, y: 4 }), 5);
+  assert.deepEqual(
+    Viewer.pointerMidpoint({ x: 10, y: 20 }, { x: 30, y: 50 }),
+    { x: 20, y: 35 }
+  );
+});
+
+test('围绕非中心焦点缩放时保持焦点下的图片内容稳定', () => {
+  const next = Viewer.zoomAroundPoint(
+    { scale: 1, x: 0, y: 0 },
+    2,
+    { x: 225, y: 100 },
+    { width: 300, height: 200 }
+  );
+  assert.deepEqual(next, { scale: 2, x: -75, y: 0 });
+});
+
+test('焦点缩放接受边缘零坐标并继续限制缩放和平移边界', () => {
+  assert.deepEqual(
+    Viewer.zoomAroundPoint(
+      { scale: 1, x: 0, y: 0 },
+      2,
+      { x: 0, y: 0 },
+      { width: 300, height: 200 }
+    ),
+    { scale: 2, x: 150, y: 100 }
+  );
+  const next = Viewer.zoomAroundPoint(
+    { scale: 4, x: 0, y: 0 },
+    8,
+    { x: 300, y: 200 },
+    { width: 300, height: 200 }
+  );
+  assert.equal(next.scale, 5);
+  assert.deepEqual({ x: next.x, y: next.y }, { x: -37.5, y: -25 });
+});
+
 test('只有完整双资源引用才启用实况播放', () => {
   assert.equal(Viewer.canPlayLive({ kind: 'live-photo', url: 'a.jpg', motion_url: 'a.mov' }), true);
   assert.equal(Viewer.canPlayLive({ media_kind: 'live-photo', url: 'a.jpg', motion_url: 'a.mov' }), true);

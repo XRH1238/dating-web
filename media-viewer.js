@@ -69,6 +69,42 @@
     };
   }
 
+  function pointerCoordinate(point, key) {
+    var value = Number(point && point[key]);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function pointerDistance(a, b) {
+    var dx = pointerCoordinate(b, 'x') - pointerCoordinate(a, 'x');
+    var dy = pointerCoordinate(b, 'y') - pointerCoordinate(a, 'y');
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function pointerMidpoint(a, b) {
+    return {
+      x: (pointerCoordinate(a, 'x') + pointerCoordinate(b, 'x')) / 2,
+      y: (pointerCoordinate(a, 'y') + pointerCoordinate(b, 'y')) / 2,
+    };
+  }
+
+  function zoomAroundPoint(state, nextScale, focal, bounds) {
+    var oldScale = clampScale(state && state.scale);
+    var scale = clampScale(nextScale);
+    var width = Math.max(0, Number(bounds && bounds.width) || 0);
+    var height = Math.max(0, Number(bounds && bounds.height) || 0);
+    var focalX = Number(focal && focal.x);
+    var focalY = Number(focal && focal.y);
+    var px = (Number.isFinite(focalX) ? focalX : width / 2) - width / 2;
+    var py = (Number.isFinite(focalY) ? focalY : height / 2) - height / 2;
+    var x = Number(state && state.x) || 0;
+    var y = Number(state && state.y) || 0;
+    var position = clampPan({
+      x: px - ((px - x) / oldScale) * scale,
+      y: py - ((py - y) / oldScale) * scale,
+    }, scale, bounds);
+    return { scale: scale, x: position.x, y: position.y };
+  }
+
   function canPlayLive(media) {
     var kind = media && (media.kind || media.media_kind);
     return !!(media && kind === 'live-photo' && media.url && media.motion_url);
@@ -374,6 +410,9 @@
     move: move,
     clampScale: clampScale,
     clampPan: clampPan,
+    pointerDistance: pointerDistance,
+    pointerMidpoint: pointerMidpoint,
+    zoomAroundPoint: zoomAroundPoint,
     canPlayLive: canPlayLive,
     markAppleFailed: markAppleFailed,
     loadLivePhotosKit: loadLivePhotosKit,
