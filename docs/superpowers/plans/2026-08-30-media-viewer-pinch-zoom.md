@@ -82,8 +82,10 @@ function zoomAroundPoint(state, nextScale, focal, bounds) {
   var scale = clampScale(nextScale);
   var width = Math.max(0, Number(bounds && bounds.width) || 0);
   var height = Math.max(0, Number(bounds && bounds.height) || 0);
-  var px = (Number(focal && focal.x) || width / 2) - width / 2;
-  var py = (Number(focal && focal.y) || height / 2) - height / 2;
+  var focalX = Number(focal && focal.x);
+  var focalY = Number(focal && focal.y);
+  var px = (Number.isFinite(focalX) ? focalX : width / 2) - width / 2;
+  var py = (Number.isFinite(focalY) ? focalY : height / 2) - height / 2;
   var x = Number(state && state.x) || 0;
   var y = Number(state && state.y) || 0;
   var position = clampPan({
