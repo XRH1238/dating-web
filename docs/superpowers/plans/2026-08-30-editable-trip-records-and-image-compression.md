@@ -28,7 +28,7 @@
 - 创建：`image-compression.js`
 - 创建：`tests/image-compression.test.js`
 
-- [ ] **步骤 1：编写失败的尺寸与结果选择测试**
+- [x] **步骤 1：编写失败的尺寸与结果选择测试**
 
 ```js
 test('最长边限制为 3200 且不放大小图', () => {
@@ -42,12 +42,12 @@ test('压缩文件不更小时保留原文件', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并确认因模块不存在而失败**
+- [x] **步骤 2：运行测试并确认因模块不存在而失败**
 
 运行：`node --test tests/image-compression.test.js`
 预期：FAIL，`Cannot find module '../image-compression.js'`。
 
-- [ ] **步骤 3：实现纯函数和浏览器压缩入口**
+- [x] **步骤 3：实现纯函数和浏览器压缩入口**
 
 ```js
 function targetDimensions(width, height, maxEdge) {
@@ -77,12 +77,12 @@ async function compressFile(file, options) {
 }
 ```
 
-- [ ] **步骤 4：运行单元测试确认通过**
+- [x] **步骤 4：运行单元测试确认通过**
 
 运行：`node --test tests/image-compression.test.js`
 预期：全部通过，0 failed。
 
-- [ ] **步骤 5：提交任务 1**
+- [x] **步骤 5：提交任务 1**
 
 ```bash
 git add image-compression.js tests/image-compression.test.js
