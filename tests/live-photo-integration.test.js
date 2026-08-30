@@ -77,8 +77,11 @@ test('Apple 播放失败调用原生视频回退', () => {
   assert.match(viewer, /event\.key === ['"]Escape['"][\s\S]*close\(\)/);
 });
 
-test('本次媒体功能使用一致的新缓存版本', () => {
-  ['styles.css', 'live-photo.js', 'media-viewer.js', 'script.js'].forEach(asset => {
+test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
+  ['live-photo.js', 'media-viewer.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-5'));
+  });
+  ['styles.css', 'script.js'].forEach(asset => {
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-6'));
   });
 });

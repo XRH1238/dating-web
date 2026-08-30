@@ -217,12 +217,12 @@ git commit -m "feat: edit trip records and photos (task 3/4)"
 - 修改：`index.html`（将本次变更涉及的脚本和样式查询版本统一更新为 `20260830-6`）
 - 修改：`docs/superpowers/plans/2026-08-30-editable-trip-records-and-image-compression.md`（勾选步骤）
 
-- [ ] **步骤 1：运行完整自动化测试**
+- [x] **步骤 1：运行完整自动化测试**
 
 运行：`node --test tests/*.test.js`
 预期：全部测试通过，0 failed。
 
-- [ ] **步骤 2：执行静态检查**
+- [x] **步骤 2：执行静态检查**
 
 运行：`git diff --check && node --check script.js && node --check image-compression.js && node --check cloud-data-client.js`
 预期：退出码 0，无输出。
@@ -230,6 +230,8 @@ git commit -m "feat: edit trip records and photos (task 3/4)"
 - [ ] **步骤 3：在本地浏览器验收**
 
 打开 `http://127.0.0.1:4174/#records`，使用页面注入的测试态记录验证：编辑入口可见、字段回填、删除旧预览、添加新预览、取消不改变卡片、保存按钮防重复提交；再打开一张照片验证缩放、缩小和拖动。不得向真实 Supabase 写入测试数据。
+
+执行说明：内置浏览器的 URL 安全策略阻止自动控制本机地址，因此不绕过限制；推送后在 HTTPS 线上页面执行等价的只读交互验收，不点击“保存修改”，不改变真实记录。
 
 - [ ] **步骤 4：提交最终计划状态并推送**
 
