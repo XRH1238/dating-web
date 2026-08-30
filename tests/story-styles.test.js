@@ -4,6 +4,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
 
+test('高清查看器全屏显示原图并提供清晰焦点', () => {
+  assert.match(css, /\.media-viewer\s*\{[^}]*width:\s*100vw[^}]*height:\s*100dvh/s);
+  assert.match(css, /\.media-viewer-stage img[^}]*object-fit:\s*contain/s);
+  assert.match(css, /\.media-viewer-trigger:focus-visible/);
+  assert.match(css, /\.live-photo-badge/);
+});
+
+test('查看器适配手机安全区并尊重减少动态效果', () => {
+  assert.match(css, /env\(safe-area-inset-top\)/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.media-viewer-toolbar/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.media-viewer/s);
+});
+
 test('故事区桌面端使用时间轴与胶囊双栏布局', () => {
   assert.match(css, /\.story-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.7fr\)\s+minmax\(300px,\s*\.8fr\)/s);
   assert.match(css, /\.story-timeline::before/);
