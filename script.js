@@ -92,6 +92,7 @@ let capsuleExistingPhotos = [];
 let editingCapsuleIndex = -1;
 let activeType = "plan";
 let cloudStatusTimer;
+let uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
 const mediaViewerCollections = new WeakMap();
 
 // Local SVG map state
@@ -1031,10 +1032,45 @@ function safeMediaFileName(name) {
   return String(name || "media").replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 
+function resetUploadCompressionStats() {
+  uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
+}
+
+function trackCompressionResult(result) {
+  uploadCompressionStats.originalBytes += Number(result.originalBytes) || 0;
+  uploadCompressionStats.uploadBytes += Number(result.uploadBytes) || 0;
+  if (result.compressed) uploadCompressionStats.compressedCount += 1;
+  if (result.warning) uploadCompressionStats.warnings.push(result.warning);
+}
+
+function formatMediaBytes(bytes) {
+  var value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024 * 1024) return Math.max(1, Math.round(value / 1024)) + " KB";
+  return (value / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function uploadCompressionMessage() {
+  var messages = [];
+  if (uploadCompressionStats.compressedCount) {
+    messages.push("已高质量压缩 " + uploadCompressionStats.compressedCount + " 张照片：" +
+      formatMediaBytes(uploadCompressionStats.originalBytes) + " → " + formatMediaBytes(uploadCompressionStats.uploadBytes) + "。");
+  }
+  if (uploadCompressionStats.warnings.length) messages.push(uploadCompressionStats.warnings[0]);
+  return messages.join(" ");
+}
+
+async function prepareUploadPhoto(item) {
+  var original = item.kind === "live-photo" ? item.photoFile : item.file;
+  if (item.kind !== "image" || !window.ImageCompression) return original;
+  var result = await window.ImageCompression.compressFile(original, { maxEdge: 3200, quality: 0.88 });
+  trackCompressionResult(result);
+  return result.file;
+}
+
 async function uploadMediaItem(item, folder, index) {
   if (!state.backendReady) return localMediaRef(item);
   var stamp = Date.now() + "-" + index;
-  var photoFile = item.kind === "live-photo" ? item.photoFile : item.file;
+  var photoFile = await prepareUploadPhoto(item);
   var path = folder + "/" + stamp + "-" + safeMediaFileName(photoFile.name);
   await state.client.upload(storageBucket, path, photoFile);
   var ref = {
@@ -1056,6 +1092,7 @@ async function uploadMediaItem(item, folder, index) {
 
 async function uploadStoryFiles(files, folder) {
   var refs = [];
+  resetUploadCompressionStats();
   for (var i = 0; i < files.length; i++) {
     refs.push(await uploadMediaItem(files[i], folder, i));
   }
@@ -1298,6 +1335,7 @@ async function uploadPhotos(items) {
   if (!items || !items.length) return;
   var city = photoCityInput ? photoCityInput.value.trim() : "";
   var status = document.querySelector("#gallery-media-status");
+  resetUploadCompressionStats();
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
     var entry;
@@ -1338,6 +1376,8 @@ async function uploadPhotos(items) {
     state.photos.unshift(entry);
   }
   if (photoCityInput) photoCityInput.value = "";
+  var compressionMessage = uploadCompressionMessage();
+  if (status && compressionMessage) status.textContent = compressionMessage;
   renderAll();
 }
 

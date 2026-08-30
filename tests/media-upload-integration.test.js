@@ -21,6 +21,16 @@ test('媒体核心脚本在主脚本之前加载', () => {
   assert.ok(html.indexOf('media-upload.js') >= 0);
   assert.ok(html.indexOf('media-upload.js') < html.indexOf('script.js'));
   assert.ok(html.indexOf('live-photo.js') < html.indexOf('script.js'));
+  assert.ok(html.indexOf('image-compression.js') < html.indexOf('script.js'));
+});
+
+test('三个上传入口共用普通图片压缩且实况照片保持原文件', () => {
+  assert.match(script, /window\.ImageCompression\.compressFile/);
+  assert.match(script, /item\.kind\s*!==\s*["']image["'][\s\S]*?return original/);
+  assert.match(script, /async function uploadMediaItem/);
+  assert.match(script, /async function uploadPhotos/);
+  assert.match(script, /uploadStoryFiles\(recordDraftFiles/);
+  assert.match(script, /uploadStoryFiles\(capsuleDraftFiles/);
 });
 
 test('拖拽绑定、媒体渲染和高亮样式存在', () => {

@@ -121,6 +121,16 @@
         });
         return parse(response);
       },
+      removeObjects: async function(bucket, paths) {
+        var prefixes = Array.from(paths || []).filter(Boolean);
+        if (!prefixes.length) return [];
+        var response = await timedRequest(baseUrl + "/storage/v1/object/" + safeSegment(bucket), {
+          method: "DELETE",
+          headers: headers({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ prefixes: prefixes }),
+        });
+        return parse(response);
+      },
       getPublicUrl: function(bucket, path) {
         var encodedPath = path.split("/").map(encodeURIComponent).join("/");
         return baseUrl + "/storage/v1/object/public/" + safeSegment(bucket) + "/" + encodedPath;

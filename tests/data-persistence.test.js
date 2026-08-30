@@ -113,3 +113,19 @@ test('云端长时间无响应时会结束等待并进入兜底模式', async ()
   });
   await assert.rejects(() => client.select('love_todos'), /超时/);
 });
+
+test('Storage 文件可以按路径批量删除', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+  await client.removeObjects('love-photos', ['records/a.webp', 'records/a.mov']);
+  assert.equal(calls[0].url, 'https://example.supabase.co/storage/v1/object/love-photos');
+  assert.equal(calls[0].options.method, 'DELETE');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { prefixes: ['records/a.webp', 'records/a.mov'] });
+});

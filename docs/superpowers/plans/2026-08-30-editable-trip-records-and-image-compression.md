@@ -98,7 +98,7 @@ git commit -m "feat: add high-quality image compression (task 1/4)"
 - 修改：`tests/data-persistence.test.js`
 - 修改：`tests/media-upload-integration.test.js`
 
-- [ ] **步骤 1：编写失败的 Storage 删除与上传压缩测试**
+- [x] **步骤 1：编写失败的 Storage 删除与上传压缩测试**
 
 ```js
 test('Storage 文件可以按路径删除', async () => {
@@ -113,12 +113,12 @@ test('普通图片上传前经过压缩而实况照片保持原文件', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试确认新能力缺失而失败**
+- [x] **步骤 2：运行测试确认新能力缺失而失败**
 
 运行：`node --test tests/data-persistence.test.js tests/media-upload-integration.test.js`
 预期：至少一个断言失败，指出 `removeObjects` 或 `ImageCompression.compressFile` 缺失。
 
-- [ ] **步骤 3：实现删除请求和压缩上传**
+- [x] **步骤 3：实现删除请求和压缩上传**
 
 ```js
 removeObjects: async function(bucket, paths) {
@@ -133,12 +133,12 @@ removeObjects: async function(bucket, paths) {
 
 在 `uploadMediaItem` 中只压缩 `kind === 'image'` 的文件，将实际上传大小写入状态提示；相册、记录和胶囊继续共用这个上传函数。
 
-- [ ] **步骤 4：运行目标测试确认通过**
+- [x] **步骤 4：运行目标测试确认通过**
 
 运行：`node --test tests/data-persistence.test.js tests/media-upload-integration.test.js tests/image-compression.test.js`
 预期：全部通过，0 failed。
 
-- [ ] **步骤 5：提交任务 2**
+- [x] **步骤 5：提交任务 2**
 
 ```bash
 git add cloud-data-client.js script.js index.html tests/data-persistence.test.js tests/media-upload-integration.test.js
