@@ -248,7 +248,8 @@
     });
     elements.document.addEventListener('keydown', function (event) {
       if (!elements.dialog.open) return;
-      if (event.key === 'ArrowLeft') changeMedia(-1);
+      if (event.key === 'Escape') close();
+      else if (event.key === 'ArrowLeft') changeMedia(-1);
       else if (event.key === 'ArrowRight') changeMedia(1);
       else if (event.key === '+' || event.key === '=') zoomBy(0.5);
       else if (event.key === '-') zoomBy(-0.5);
