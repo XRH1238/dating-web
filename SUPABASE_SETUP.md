@@ -96,6 +96,7 @@ using (bucket_id = 'love-photos');
 它让 `love-photos` 暂时允许匿名读取、上传和删除；不要在主 Supabase 重复执行。
 
 这是登录鉴权上线前的临时策略。鉴权完成后，必须同时收紧两个 Supabase 项目的匿名写入和删除权限。
+在此之前，持有公开 publishable key 的访问者可以枚举并删除 `love-photos` 中的任意对象，不需要预先知道文件路径。
 
 ## 故事时间轴与时间胶囊升级
 

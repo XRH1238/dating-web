@@ -31,7 +31,7 @@ SQL 必须在第二个 Supabase 项目的 SQL Editor 中执行，不能在主 Su
 
 ## 安全影响
 
-这是一项明确接受的临时风险：在登录鉴权上线前，持有公开 publishable key 且知道对象路径的访问者可以请求删除第二个 Storage 中的对象。风险水平与第一个 Supabase 当前的公开 Storage 策略一致。
+这是一项明确接受的临时风险：在登录鉴权上线前，任何持有公开 publishable key 的访问者都可以枚举 `love-photos` 中的对象路径，并删除其中任意对象，不需要预先知道路径。网站匿名及登录客户端获得的 Storage 能力与第一个 Supabase 当前的公开策略一致；第二个项目的策略角色范围显式限制为 `anon, authenticated`。
 
 下一阶段必须实现登录鉴权，并把两个 Supabase 项目的匿名写入和删除策略一起改为仅授权用户可用。
 
