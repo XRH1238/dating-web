@@ -20,6 +20,10 @@ test('查看器适配手机安全区并尊重减少动态效果', () => {
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*\.media-viewer/s);
 });
 
+test('触摸与触控板手势过程中停用照片变换过渡', () => {
+  assert.match(css, /\.media-viewer-stage\.is-gesturing[\s\S]*transition:\s*none/);
+});
+
 test('故事区桌面端使用时间轴与胶囊双栏布局', () => {
   assert.match(css, /\.story-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.7fr\)\s+minmax\(300px,\s*\.8fr\)/s);
   assert.match(css, /\.story-timeline::before/);

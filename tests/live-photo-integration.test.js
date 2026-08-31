@@ -77,6 +77,22 @@ test('Apple 播放失败调用原生视频回退', () => {
   assert.match(viewer, /event\.key === ['"]Escape['"][\s\S]*close\(\)/);
 });
 
+test('查看器监听双指、Mac 触控板和 Safari 缩放手势', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /activePointers\s*=\s*new Map/);
+  assert.match(viewer, /addEventListener\(['"]wheel['"]/);
+  assert.match(viewer, /addEventListener\(['"]gesturestart['"]/);
+  assert.match(viewer, /addEventListener\(['"]gesturechange['"]/);
+  assert.match(viewer, /pointerDistance/);
+  assert.match(viewer, /pointerMidpoint/);
+});
+
+test('双指开始会取消实况照片长按并进入无过渡手势状态', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /activePointers\.size\s*===\s*2[\s\S]*clearHoldTimer/);
+  assert.match(viewer, /classList\.add\(['"]is-gesturing['"]\)/);
+});
+
 test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
   ['live-photo.js', 'media-viewer.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-5'));

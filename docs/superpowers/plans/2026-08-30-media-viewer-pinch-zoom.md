@@ -118,7 +118,7 @@ git commit -m "feat: add viewer focal zoom geometry"
 - 修改：`media-viewer.js`
 - 修改：`styles.css`
 
-- [ ] **步骤 1：编写失败的浏览器事件与样式测试**
+- [x] **步骤 1：编写失败的浏览器事件与样式测试**
 
 ```js
 test('查看器监听双指、Mac 触控板和 Safari 缩放手势', () => {
@@ -146,12 +146,12 @@ test('触摸与触控板手势过程中停用照片变换过渡', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并确认事件监听缺失而失败**
+- [x] **步骤 2：运行测试并确认事件监听缺失而失败**
 
 运行：`node --test tests/live-photo-integration.test.js tests/story-styles.test.js`
 预期：FAIL，指出 `activePointers`、`wheel`、gesture 或 `is-gesturing` 缺失。
 
-- [ ] **步骤 3：实现统一活动指针和捏合会话**
+- [x] **步骤 3：实现统一活动指针和捏合会话**
 
 在模块状态区加入：
 
@@ -177,7 +177,7 @@ viewerState = Object.assign({}, viewerState, { scale: next.scale, x: moved.x, y:
 pinchSession = { distance: distance, midpoint: midpoint };
 ```
 
-- [ ] **步骤 4：实现 Mac wheel 与 Safari gesture 兼容路径**
+- [x] **步骤 4：实现 Mac wheel 与 Safari gesture 兼容路径**
 
 ```js
 elements.stage.addEventListener('wheel', function (event) {
@@ -193,7 +193,7 @@ elements.stage.addEventListener('wheel', function (event) {
 
 `gesturestart` 保存起始缩放，`gesturechange` 使用 `startScale * event.scale` 调用 `zoomAroundPoint`，`gestureend` 清理状态；活动双触点存在时忽略 Safari 兼容事件，避免重复缩放。
 
-- [ ] **步骤 5：增加手势过程无过渡样式**
+- [x] **步骤 5：增加手势过程无过渡样式**
 
 ```css
 .media-viewer-stage.is-gesturing .media-viewer-media {
@@ -201,12 +201,12 @@ elements.stage.addEventListener('wheel', function (event) {
 }
 ```
 
-- [ ] **步骤 6：运行目标测试确认通过**
+- [x] **步骤 6：运行目标测试确认通过**
 
 运行：`node --test tests/media-viewer.test.js tests/live-photo-integration.test.js tests/story-styles.test.js`
 预期：全部通过，0 failed。
 
-- [ ] **步骤 7：提交任务 2**
+- [x] **步骤 7：提交任务 2**
 
 ```bash
 git add media-viewer.js styles.css tests/live-photo-integration.test.js tests/story-styles.test.js

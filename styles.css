@@ -2751,6 +2751,10 @@ textarea {
   transition: transform 160ms ease;
 }
 
+.media-viewer-stage.is-gesturing .media-viewer-media {
+  transition: none;
+}
+
 .media-viewer button {
   min-width: 44px;
   min-height: 44px;

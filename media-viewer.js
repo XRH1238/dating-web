@@ -19,6 +19,10 @@
   var dragStartY = 0;
   var dragOriginX = 0;
   var dragOriginY = 0;
+  var activePointers = new Map();
+  var pinchSession = null;
+  var safariGestureScale = null;
+  var wheelGestureTimer = null;
 
   function normalizeIndex(index, count) {
     if (!count) return 0;
@@ -153,9 +157,13 @@
     if (elements && elements.status) elements.status.textContent = message || '';
   }
 
-  function stopPlayback() {
+  function clearHoldTimer() {
     if (holdTimer) root.clearTimeout(holdTimer);
     holdTimer = null;
+  }
+
+  function stopPlayback() {
+    clearHoldTimer();
     if (applePlayer) {
       try {
         if (typeof applePlayer.stop === 'function') applePlayer.stop();
@@ -173,6 +181,97 @@
       width: elements.stage.clientWidth || 0,
       height: elements.stage.clientHeight || 0,
     };
+  }
+
+  function stagePoint(event) {
+    var bounds = stageBounds();
+    var rect = elements && elements.stage && elements.stage.getBoundingClientRect
+      ? elements.stage.getBoundingClientRect()
+      : { left: 0, top: 0 };
+    var clientX = Number(event && event.clientX);
+    var clientY = Number(event && event.clientY);
+    return {
+      x: Number.isFinite(clientX) ? clientX - (Number(rect.left) || 0) : bounds.width / 2,
+      y: Number.isFinite(clientY) ? clientY - (Number(rect.top) || 0) : bounds.height / 2,
+    };
+  }
+
+  function clearGestureClasses() {
+    if (!elements || !elements.stage) return;
+    elements.stage.classList.remove('is-panning');
+    elements.stage.classList.remove('is-gesturing');
+  }
+
+  function resetGestureState() {
+    clearHoldTimer();
+    if (wheelGestureTimer) root.clearTimeout(wheelGestureTimer);
+    wheelGestureTimer = null;
+    activePointers.clear();
+    pinchSession = null;
+    safariGestureScale = null;
+    dragPointerId = null;
+    clearGestureClasses();
+  }
+
+  function beginDrag(pointerId, point) {
+    dragPointerId = pointerId;
+    dragStartX = point.x;
+    dragStartY = point.y;
+    dragOriginX = viewerState.x || 0;
+    dragOriginY = viewerState.y || 0;
+    elements.stage.classList.add('is-panning');
+  }
+
+  function beginPinch() {
+    var points = Array.from(activePointers.values()).slice(0, 2);
+    if (points.length < 2) return;
+    var distance = pointerDistance(points[0], points[1]);
+    if (!distance) return;
+    pinchSession = {
+      distance: distance,
+      midpoint: pointerMidpoint(points[0], points[1]),
+    };
+    dragPointerId = null;
+    elements.stage.classList.remove('is-panning');
+    elements.stage.classList.add('is-gesturing');
+  }
+
+  function updatePinch() {
+    if (!pinchSession || activePointers.size < 2) return false;
+    var points = Array.from(activePointers.values()).slice(0, 2);
+    var distance = pointerDistance(points[0], points[1]);
+    if (!distance || !pinchSession.distance) return false;
+    var midpoint = pointerMidpoint(points[0], points[1]);
+    var bounds = stageBounds();
+    var next = zoomAroundPoint(
+      viewerState,
+      viewerState.scale * (distance / pinchSession.distance),
+      pinchSession.midpoint,
+      bounds
+    );
+    var moved = clampPan({
+      x: next.x + midpoint.x - pinchSession.midpoint.x,
+      y: next.y + midpoint.y - pinchSession.midpoint.y,
+    }, next.scale, bounds);
+    viewerState = Object.assign({}, viewerState, {
+      scale: next.scale,
+      x: moved.x,
+      y: moved.y,
+    });
+    pinchSession = { distance: distance, midpoint: midpoint };
+    applyScale();
+    return true;
+  }
+
+  function markWheelGesture() {
+    elements.stage.classList.add('is-gesturing');
+    if (wheelGestureTimer) root.clearTimeout(wheelGestureTimer);
+    wheelGestureTimer = root.setTimeout(function () {
+      wheelGestureTimer = null;
+      if (safariGestureScale === null && activePointers.size < 2) {
+        elements.stage.classList.remove('is-gesturing');
+      }
+    }, 140);
   }
 
   function applyScale() {
@@ -270,6 +369,7 @@
   }
 
   function changeMedia(delta) {
+    resetGestureState();
     viewerState = move(viewerState, delta);
     renderCurrent();
   }
@@ -288,6 +388,7 @@
 
   function close() {
     if (!elements) return;
+    resetGestureState();
     stopPlayback();
     if (elements.dialog.open && typeof elements.dialog.close === 'function') elements.dialog.close();
     else elements.dialog.removeAttribute('open');
@@ -310,13 +411,23 @@
     elements.stage.addEventListener('dragstart', function (event) { event.preventDefault(); });
     elements.stage.addEventListener('pointerdown', function (event) {
       if (event.button > 0 || !elements.stage.querySelector('.media-viewer-media')) return;
-      dragPointerId = event.pointerId;
-      dragStartX = event.clientX;
-      dragStartY = event.clientY;
-      dragOriginX = viewerState.x || 0;
-      dragOriginY = viewerState.y || 0;
+      if (activePointers.size >= 2) return;
+      var point = stagePoint(event);
+      activePointers.set(event.pointerId, point);
       if (elements.stage.setPointerCapture) elements.stage.setPointerCapture(event.pointerId);
-      elements.stage.classList.add('is-panning');
+      if (activePointers.size === 2) {
+        clearHoldTimer();
+        if (holdPlaying) {
+          holdPlaying = false;
+          stopPlayback();
+          renderCurrent();
+        }
+        beginPinch();
+        event.preventDefault();
+        return;
+      }
+      if (activePointers.size !== 1) return;
+      beginDrag(event.pointerId, point);
       if (!canPlayLive(currentMedia())) return;
       holdPlaying = false;
       holdTimer = root.setTimeout(function () {
@@ -326,12 +437,20 @@
       }, 350);
     });
     elements.stage.addEventListener('pointermove', function (event) {
+      if (!activePointers.has(event.pointerId)) return;
+      var point = stagePoint(event);
+      activePointers.set(event.pointerId, point);
+      if (activePointers.size >= 2 && !pinchSession) beginPinch();
+      if (updatePinch()) {
+        clearHoldTimer();
+        event.preventDefault();
+        return;
+      }
       if (event.pointerId !== dragPointerId) return;
-      var dx = event.clientX - dragStartX;
-      var dy = event.clientY - dragStartY;
+      var dx = point.x - dragStartX;
+      var dy = point.y - dragStartY;
       if (Math.abs(dx) + Math.abs(dy) > 6 && holdTimer) {
-        root.clearTimeout(holdTimer);
-        holdTimer = null;
+        clearHoldTimer();
       }
       if (viewerState.scale <= 1) return;
       var position = clampPan({ x: dragOriginX + dx, y: dragOriginY + dy }, viewerState.scale, stageBounds());
@@ -340,18 +459,59 @@
       event.preventDefault();
     });
     ['pointerup', 'pointercancel'].forEach(function (type) {
-      elements.stage.addEventListener(type, function () {
-        if (holdTimer) root.clearTimeout(holdTimer);
-        holdTimer = null;
-        dragPointerId = null;
-        elements.stage.classList.remove('is-panning');
+      elements.stage.addEventListener(type, function (event) {
+        clearHoldTimer();
+        activePointers.delete(event.pointerId);
+        if (activePointers.size < 2) {
+          pinchSession = null;
+          elements.stage.classList.remove('is-gesturing');
+        }
         if (holdPlaying) {
           holdPlaying = false;
           stopPlayback();
           renderCurrent();
         }
+        if (activePointers.size === 1) {
+          var remaining = activePointers.entries().next().value;
+          beginDrag(remaining[0], remaining[1]);
+        } else if (!activePointers.size) {
+          dragPointerId = null;
+          elements.stage.classList.remove('is-panning');
+        }
       });
     });
+    elements.stage.addEventListener('wheel', function (event) {
+      if (!elements.stage.querySelector('.media-viewer-media') || safariGestureScale !== null) return;
+      event.preventDefault();
+      clearHoldTimer();
+      markWheelGesture();
+      var factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.01 : 0.0025));
+      var next = zoomAroundPoint(viewerState, viewerState.scale * factor, stagePoint(event), stageBounds());
+      viewerState = Object.assign({}, viewerState, next);
+      applyScale();
+    }, { passive: false });
+    elements.stage.addEventListener('gesturestart', function (event) {
+      if (activePointers.size >= 2) return;
+      event.preventDefault();
+      clearHoldTimer();
+      safariGestureScale = viewerState.scale;
+      elements.stage.classList.add('is-gesturing');
+    }, { passive: false });
+    elements.stage.addEventListener('gesturechange', function (event) {
+      if (safariGestureScale === null || activePointers.size >= 2) return;
+      event.preventDefault();
+      var gestureScale = Number(event.scale);
+      if (!Number.isFinite(gestureScale) || gestureScale <= 0) return;
+      var next = zoomAroundPoint(viewerState, safariGestureScale * gestureScale, stagePoint(event), stageBounds());
+      viewerState = Object.assign({}, viewerState, next);
+      applyScale();
+    }, { passive: false });
+    elements.stage.addEventListener('gestureend', function (event) {
+      if (safariGestureScale === null) return;
+      event.preventDefault();
+      safariGestureScale = null;
+      if (activePointers.size < 2) elements.stage.classList.remove('is-gesturing');
+    }, { passive: false });
     root.addEventListener('resize', function () {
       var position = clampPan(viewerState, viewerState.scale, stageBounds());
       viewerState = Object.assign({}, viewerState, { x: position.x, y: position.y });
