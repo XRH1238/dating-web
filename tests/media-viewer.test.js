@@ -70,6 +70,18 @@ test('焦点缩放接受边缘零坐标并继续限制缩放和平移边界', ()
   assert.deepEqual({ x: next.x, y: next.y }, { x: -37.5, y: -25 });
 });
 
+test('双指距离与中点同时变化时缩放并跟随手势移动', () => {
+  assert.deepEqual(
+    Viewer.applyPinchGesture(
+      { scale: 1, x: 0, y: 0 },
+      { distance: 100, midpoint: { x: 150, y: 100 } },
+      { distance: 200, midpoint: { x: 170, y: 120 } },
+      { width: 300, height: 200 }
+    ),
+    { scale: 2, x: 20, y: 20 }
+  );
+});
+
 test('只有完整双资源引用才启用实况播放', () => {
   assert.equal(Viewer.canPlayLive({ kind: 'live-photo', url: 'a.jpg', motion_url: 'a.mov' }), true);
   assert.equal(Viewer.canPlayLive({ media_kind: 'live-photo', url: 'a.jpg', motion_url: 'a.mov' }), true);

@@ -109,6 +109,30 @@
     return { scale: scale, x: position.x, y: position.y };
   }
 
+  function applyPinchGesture(state, previousGesture, currentGesture, bounds) {
+    var previousDistance = Number(previousGesture && previousGesture.distance);
+    var currentDistance = Number(currentGesture && currentGesture.distance);
+    if (!Number.isFinite(previousDistance) || previousDistance <= 0 ||
+        !Number.isFinite(currentDistance) || currentDistance <= 0) {
+      var scale = clampScale(state && state.scale);
+      var unchanged = clampPan(state, scale, bounds);
+      return { scale: scale, x: unchanged.x, y: unchanged.y };
+    }
+    var previousMidpoint = previousGesture.midpoint || pointerMidpoint(null, null);
+    var currentMidpoint = currentGesture.midpoint || previousMidpoint;
+    var next = zoomAroundPoint(
+      state,
+      clampScale(state && state.scale) * (currentDistance / previousDistance),
+      previousMidpoint,
+      bounds
+    );
+    var moved = clampPan({
+      x: next.x + pointerCoordinate(currentMidpoint, 'x') - pointerCoordinate(previousMidpoint, 'x'),
+      y: next.y + pointerCoordinate(currentMidpoint, 'y') - pointerCoordinate(previousMidpoint, 'y'),
+    }, next.scale, bounds);
+    return { scale: next.scale, x: moved.x, y: moved.y };
+  }
+
   function canPlayLive(media) {
     var kind = media && (media.kind || media.media_kind);
     return !!(media && kind === 'live-photo' && media.url && media.motion_url);
@@ -243,21 +267,11 @@
     if (!distance || !pinchSession.distance) return false;
     var midpoint = pointerMidpoint(points[0], points[1]);
     var bounds = stageBounds();
-    var next = zoomAroundPoint(
-      viewerState,
-      viewerState.scale * (distance / pinchSession.distance),
-      pinchSession.midpoint,
-      bounds
-    );
-    var moved = clampPan({
-      x: next.x + midpoint.x - pinchSession.midpoint.x,
-      y: next.y + midpoint.y - pinchSession.midpoint.y,
-    }, next.scale, bounds);
-    viewerState = Object.assign({}, viewerState, {
-      scale: next.scale,
-      x: moved.x,
-      y: moved.y,
-    });
+    var next = applyPinchGesture(viewerState, pinchSession, {
+      distance: distance,
+      midpoint: midpoint,
+    }, bounds);
+    viewerState = Object.assign({}, viewerState, next);
     pinchSession = { distance: distance, midpoint: midpoint };
     applyScale();
     return true;
@@ -573,6 +587,7 @@
     pointerDistance: pointerDistance,
     pointerMidpoint: pointerMidpoint,
     zoomAroundPoint: zoomAroundPoint,
+    applyPinchGesture: applyPinchGesture,
     canPlayLive: canPlayLive,
     markAppleFailed: markAppleFailed,
     loadLivePhotosKit: loadLivePhotosKit,
