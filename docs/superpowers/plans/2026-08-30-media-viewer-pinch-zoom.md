@@ -221,7 +221,7 @@ git commit -m "feat: support pinch and trackpad photo zoom"
 - 修改：`tests/home-layout.test.js`
 - 修改：`docs/superpowers/plans/2026-08-30-media-viewer-pinch-zoom.md`
 
-- [ ] **步骤 1：先更新缓存版本测试**
+- [x] **步骤 1：先更新缓存版本测试**
 
 将断言调整为：`live-photo.js` 保持 `20260830-5`，`media-viewer.js` 使用 `20260830-7`，`styles.css` 与 `script.js` 使用 `20260830-7`，其他未修改模块保持当前版本。
 
@@ -232,16 +232,16 @@ assert.match(html, /media-viewer\.js\?v=20260830-7/);
 });
 ```
 
-- [ ] **步骤 2：运行缓存测试并确认旧 HTML 版本导致失败**
+- [x] **步骤 2：运行缓存测试并确认旧 HTML 版本导致失败**
 
 运行：`node --test tests/live-photo-integration.test.js tests/home-layout.test.js`
 预期：FAIL，指出 `20260830-7` 未出现在 `index.html`。
 
-- [ ] **步骤 3：更新页面资源版本**
+- [x] **步骤 3：更新页面资源版本**
 
 在 `index.html` 中将 `styles.css`、`media-viewer.js`、`script.js` 的查询版本更新为 `20260830-7`。
 
-- [ ] **步骤 4：运行完整自动化测试与静态检查**
+- [x] **步骤 4：运行完整自动化测试与静态检查**
 
 运行：`node --test tests/*.test.js`
 预期：全部通过，0 failed。
@@ -249,11 +249,13 @@ assert.match(html, /media-viewer\.js\?v=20260830-7/);
 运行：`git diff --check && node --check media-viewer.js && node --check script.js`
 预期：退出码 0，无输出。
 
-- [ ] **步骤 5：浏览器只读验收**
+- [x] **步骤 5：浏览器只读验收**
 
 打开本地或线上 `#records` 页面，不创建或修改真实数据。检查高清查看器可以打开、按钮缩放和鼠标拖动仍可用，并确认页面加载的是 `20260830-7` 资源。自动化环境无法生成真实 Mac 触控板与多点触摸硬件事件时，以纯函数测试、事件绑定测试和用户设备最终手感检查为准。
 
-- [ ] **步骤 6：提交发布准备**
+执行说明：本地页面已确认加载 `20260830-7` 版本的样式、查看器和主脚本，查看器舞台 `touch-action: none`，控制台无错误或警告。本地数据中没有可打开的记录/相册照片，因此没有把按钮缩放、鼠标拖动和真实硬件捏合记为自动交互通过；这些行为由 169 项完整测试中的几何与事件绑定测试覆盖，并保留给用户设备最终检查。
+
+- [x] **步骤 6：提交发布准备**
 
 ```bash
 git add index.html tests/live-photo-integration.test.js tests/home-layout.test.js docs/superpowers/plans/2026-08-30-media-viewer-pinch-zoom.md
