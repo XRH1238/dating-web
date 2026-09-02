@@ -129,3 +129,61 @@ test('Storage 文件可以按路径批量删除', async () => {
   assert.equal(calls[0].options.method, 'DELETE');
   assert.deepEqual(JSON.parse(calls[0].options.body), { prefixes: ['records/a.webp', 'records/a.mov'] });
 });
+
+test('数据库与 Storage 请求分别使用主配置和 Storage 配置', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'primary-key',
+    storageUrl: 'https://storage.supabase.co/',
+    storageKey: 'storage-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+
+  await client.select('love_photos');
+  await client.insert('love_photos', [{ name: 'test photo.jpg' }]);
+  await client.update('love_photos', 'photo 1', { name: 'renamed.jpg' });
+  await client.remove('love_photos', 'photo 1');
+  await client.upload('love-photos', 'records/test photo.jpg', { type: 'image/jpeg' });
+  await client.removeObjects('love-photos', ['records/test photo.jpg']);
+
+  assert.deepEqual(calls.slice(0, 4).map(call => call.url), [
+    'https://primary.supabase.co/rest/v1/love_photos?select=*&order=created_at.desc',
+    'https://primary.supabase.co/rest/v1/love_photos',
+    'https://primary.supabase.co/rest/v1/love_photos?id=eq.photo%201',
+    'https://primary.supabase.co/rest/v1/love_photos?id=eq.photo%201',
+  ]);
+  calls.slice(0, 4).forEach(call => assert.equal(call.options.headers.apikey, 'primary-key'));
+  assert.equal(calls[4].url, 'https://storage.supabase.co/storage/v1/object/love-photos/records/test%20photo.jpg');
+  assert.equal(calls[4].options.headers.apikey, 'storage-key');
+  assert.equal(calls[5].url, 'https://storage.supabase.co/storage/v1/object/love-photos');
+  assert.equal(calls[5].options.headers.apikey, 'storage-key');
+  assert.equal(
+    client.getPublicUrl('love-photos', 'records/test photo.jpg'),
+    'https://storage.supabase.co/storage/v1/object/public/love-photos/records/test%20photo.jpg'
+  );
+});
+
+test('未提供 Storage 配置时继续使用主 Supabase', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co/',
+    key: 'primary-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '{}'; } };
+    },
+  });
+
+  await client.upload('love-photos', 'gallery/a.jpg', { type: 'image/jpeg' });
+
+  assert.equal(calls[0].url, 'https://primary.supabase.co/storage/v1/object/love-photos/gallery/a.jpg');
+  assert.equal(calls[0].options.headers.apikey, 'primary-key');
+  assert.equal(
+    client.getPublicUrl('love-photos', 'gallery/a.jpg'),
+    'https://primary.supabase.co/storage/v1/object/public/love-photos/gallery/a.jpg'
+  );
+});

@@ -48,6 +48,17 @@ test('胶囊只在成功加入新媒体后替换已有媒体', () => {
   assert.match(script, /if \(!hadDraftMedia && nextDraftMedia\.length\) capsuleExistingPhotos = \[\]/);
 });
 
+test('页面数据库与 Storage 使用各自的 Supabase 配置', () => {
+  assert.match(
+    script,
+    /const storageConfig = \{[\s\S]*?msrbqgorhjbzxomexzap\.supabase\.co[\s\S]*?sb_publishable_gGls0-_0bfkwCSmG7MNXJg_2aQLzLnV[\s\S]*?\};/
+  );
+  assert.match(
+    script,
+    /createCloudDataClient\(\{[\s\S]*?url:\s*supabaseConfig\.url,[\s\S]*?key:\s*supabaseConfig\.key,[\s\S]*?storageUrl:\s*storageConfig\.url,[\s\S]*?storageKey:\s*storageConfig\.key/
+  );
+});
+
 test('完整拖拽区具有高亮、隐藏输入和响应式媒体预览', () => {
   assert.match(styles, /\.media-dropzone\s*\{[^}]*border:\s*2px dashed/s);
   assert.match(styles, /\.media-input\s*\{[^}]*clip:/s);

@@ -3,6 +3,10 @@ const supabaseConfig = {
   url: "https://ueqlgutndwkfuffzkcxo.supabase.co",
   key: "sb_publishable_EplbiVXxWhAdBKKSF70RVQ_pPls9SSw",
 };
+const storageConfig = {
+  url: "https://msrbqgorhjbzxomexzap.supabase.co",
+  key: "sb_publishable_gGls0-_0bfkwCSmG7MNXJg_2aQLzLnV",
+};
 const tables = { plans: "love_plans", records: "love_records", todos: "love_todos", photos: "love_photos", capsules: "love_capsules" };
 const storageBucket = "love-photos";
 const todoPageSize = 10;
@@ -737,6 +741,8 @@ function connectSupabase() {
     state.client = window.CloudDataClient.createCloudDataClient({
       url: supabaseConfig.url,
       key: supabaseConfig.key,
+      storageUrl: storageConfig.url,
+      storageKey: storageConfig.key,
     });
     state.backendReady = true;
   } catch (err) {
