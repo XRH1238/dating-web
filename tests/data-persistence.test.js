@@ -12,6 +12,10 @@ try {
   // The first TDD run intentionally reaches this branch before implementation.
 }
 
+function testWatchdog(ms) {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error('测试看门狗超时')), ms));
+}
+
 test('页面使用本地云端客户端，不再依赖第三方 Supabase CDN', () => {
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js/);
   assert.match(html, /<script src="cloud-data-client\.js\?v=[^"]+"><\/script>/);
@@ -153,6 +157,7 @@ test('云端写入返回空响应时仍视为成功', async () => {
   const client = dataModule.createCloudDataClient({
     url: 'https://example.supabase.co',
     key: 'publishable-key',
+    allowAnonymousWrites: true,
     fetchImpl: async () => ({
       ok: true,
       status: 201,
@@ -161,6 +166,40 @@ test('云端写入返回空响应时仍视为成功', async () => {
     }),
   });
   await assert.doesNotReject(() => client.insert('love_todos', [{ text: '看日落' }]));
+});
+
+test('数据库写入默认要求登录，显式兼容开关才允许匿名写入', async () => {
+  const deniedCalls = [];
+  const denied = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    fetchImpl: async (url, options) => {
+      deniedCalls.push({ url, options });
+      return { ok: true, status: 204, async text() { return ''; } };
+    },
+  });
+
+  await assert.rejects(() => denied.insert('love_todos', [{ text: '看日落' }]), /请先登录/);
+  await assert.rejects(() => denied.update('love_todos', 'todo 1', { text: '看日落' }), /请先登录/);
+  await assert.rejects(() => denied.remove('love_todos', 'todo 1'), /请先登录/);
+  assert.equal(deniedCalls.length, 0);
+
+  const legacyCalls = [];
+  const legacy = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    allowAnonymousWrites: true,
+    fetchImpl: async (url, options) => {
+      legacyCalls.push({ url, options });
+      return { ok: true, status: 204, async text() { return ''; } };
+    },
+  });
+
+  await legacy.insert('love_todos', [{ text: '看日落' }]);
+  await legacy.update('love_todos', 'todo 1', { text: '看日落' });
+  await legacy.remove('love_todos', 'todo 1');
+  assert.equal(legacyCalls.length, 3);
+  legacyCalls.forEach(call => assert.equal(call.options.headers.Authorization, undefined));
 });
 
 test('云端长时间无响应时会结束等待并进入兜底模式', async () => {
@@ -173,6 +212,57 @@ test('云端长时间无响应时会结束等待并进入兜底模式', async ()
     }),
   });
   await assert.rejects(() => client.select('love_todos'), /超时/);
+});
+
+test('整个数据库操作的 deadline 覆盖挂起的认证 getter 与响应 body', async () => {
+  const getterCalls = [];
+  const getterClient = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    timeoutMs: 5,
+    getAccessToken: async () => new Promise(() => {}),
+    fetchImpl: async (url, options) => {
+      getterCalls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+  await assert.rejects(
+    () => Promise.race([getterClient.select('love_todos'), testWatchdog(50)]),
+    /云端请求超时/
+  );
+  assert.equal(getterCalls.length, 0);
+
+  const bodyCalls = [];
+  const bodyClient = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    timeoutMs: 5,
+    fetchImpl: async (url, options) => {
+      bodyCalls.push({ url, options });
+      return { ok: true, status: 200, async text() { return new Promise(() => {}); } };
+    },
+  });
+  await assert.rejects(
+    () => Promise.race([bodyClient.select('love_todos'), testWatchdog(50)]),
+    /云端请求超时/
+  );
+  assert.equal(bodyCalls.length, 1);
+
+  const jsonCalls = [];
+  const jsonClient = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    timeoutMs: 5,
+    fetchImpl: async (url, options) => {
+      jsonCalls.push({ url, options });
+      return { ok: true, status: 200, async json() { return new Promise(() => {}); } };
+    },
+  });
+  await assert.rejects(
+    () => Promise.race([jsonClient.select('love_todos'), testWatchdog(50)]),
+    /云端请求超时/
+  );
+  assert.equal(jsonCalls.length, 1);
 });
 
 test('Storage 文件可以按路径批量删除', async () => {
@@ -258,6 +348,33 @@ test('网关返回跨站或错误路径的签名 URL 时拒绝上传', async () 
   }
 });
 
+test('签名 URL 必须精确匹配 bucket/path 且只有一个非空 token', async () => {
+  const signedUrls = [
+    'https://storage.supabase.co/storage/v1/object/upload/sign/other-bucket/records/a.jpg?token=one',
+    'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/other.jpg?token=one',
+    'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records%2Fa.jpg?token=one',
+    'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg',
+    'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg?token=',
+    'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg?token=one&token=two',
+  ];
+  for (const signedUrl of signedUrls) {
+    const calls = [];
+    const client = dataModule.createCloudDataClient({
+      url: 'https://primary.supabase.co',
+      key: 'main-publishable',
+      storageUrl: 'https://storage.supabase.co',
+      storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+      getAccessToken: async () => 'user-jwt',
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, status: 200, async text() { return JSON.stringify({ signedUrl }); } };
+      },
+    });
+    await assert.rejects(() => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])));
+    assert.equal(calls.length, 1);
+  }
+});
+
 test('无效、错误或抛错的认证 getter 都会让 SELECT 匿名读取', async () => {
   const key = 'main-publishable';
   const getters = [
@@ -268,6 +385,8 @@ test('无效、错误或抛错的认证 getter 都会让 SELECT 匿名读取', a
     async () => { throw new Error('认证服务不可用'); },
     async () => key,
     async () => 'storage-publishable',
+    async () => 'sb_publishable_third_party',
+    async () => 'sb_secret_third_party',
   ];
 
   for (const getAccessToken of getters) {
@@ -289,8 +408,8 @@ test('无效、错误或抛错的认证 getter 都会让 SELECT 匿名读取', a
   }
 });
 
-test('任一 publishable key 或空 token 不能授权数据库写入或网关操作', async () => {
-  for (const token of [null, 'main-publishable', 'storage-publishable']) {
+test('任一公开 key 或空 token 不能授权数据库写入或网关操作', async () => {
+  for (const token of [null, 'main-publishable', 'storage-publishable', 'sb_publishable_third_party', 'sb_secret_third_party']) {
     const calls = [];
     const client = dataModule.createCloudDataClient({
       url: 'https://primary.supabase.co',
@@ -401,6 +520,75 @@ test('网关删除失败时保留 HTTP status', async () => {
   assert.equal(calls.length, 1);
 });
 
+test('网关整次上传和删除操作的 deadline 覆盖签名、PUT 与删除 body', async () => {
+  const signCalls = [];
+  const signClient = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co', key: 'main-publishable', storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway', timeoutMs: 5,
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      signCalls.push({ url, options });
+      return { ok: true, status: 200, async text() { return new Promise(() => {}); } };
+    },
+  });
+  await assert.rejects(
+    () => Promise.race([signClient.upload('love-photos', 'records/a.jpg', new Blob(['image'])), testWatchdog(50)]),
+    /云端请求超时/
+  );
+  assert.equal(signCalls.length, 1);
+
+  const putCalls = [];
+  const putClient = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co', key: 'main-publishable', storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway', timeoutMs: 5,
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      putCalls.push({ url, options });
+      if (putCalls.length === 1) return { ok: true, status: 200, async text() { return JSON.stringify({ signedUrl: 'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg?token=one' }); } };
+      return { ok: true, status: 200, async text() { return new Promise(() => {}); } };
+    },
+  });
+  await assert.rejects(
+    () => Promise.race([putClient.upload('love-photos', 'records/a.jpg', new Blob(['image'])), testWatchdog(50)]),
+    /云端请求超时/
+  );
+  assert.equal(putCalls.length, 2);
+
+  const deleteCalls = [];
+  const deleteClient = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co', key: 'main-publishable',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway', timeoutMs: 5,
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      deleteCalls.push({ url, options });
+      return { ok: true, status: 200, async text() { return new Promise(() => {}); } };
+    },
+  });
+  await assert.rejects(
+    () => Promise.race([deleteClient.removeObjects('love-photos', ['records/a.jpg']), testWatchdog(50)]),
+    /云端请求超时/
+  );
+  assert.equal(deleteCalls.length, 1);
+});
+
+test('上传与删除路径必须是有效的非空字符串数组，且不会请求', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co', key: 'publishable-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+  for (const invalidPath of ['', '   ', null, 1, {}]) {
+    await assert.rejects(() => client.upload('love-photos', invalidPath, { type: 'image/jpeg' }));
+  }
+  for (const invalidPaths of [undefined, 'records/a.jpg', ['', 'records/a.jpg'], ['   '], [1]]) {
+    await assert.rejects(() => client.removeObjects('love-photos', invalidPaths));
+  }
+  assert.equal(calls.length, 0);
+});
+
 test('配置网关时 Storage 删除使用主 JWT，空路径不请求', async () => {
   const calls = [];
   const client = dataModule.createCloudDataClient({
@@ -437,6 +625,7 @@ test('数据库与 Storage 请求分别使用主配置和 Storage 配置', async
     key: 'primary-key',
     storageUrl: 'https://storage.supabase.co/',
     storageKey: 'storage-key',
+    allowAnonymousWrites: true,
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
       return { ok: true, status: 200, async text() { return '[]'; } };
