@@ -85,7 +85,21 @@
       var normalized = token.trim();
       if (!normalized || normalized === key || normalized === storageKey) return null;
       if (normalized.indexOf("sb_publishable_") === 0 || normalized.indexOf("sb_secret_") === 0) return null;
+      if (hasLegacyPrivilegedRole(normalized)) return null;
       return normalized;
+    }
+
+    function hasLegacyPrivilegedRole(token) {
+      var parts = token.split(".");
+      if (parts.length !== 3 || !parts[1] || typeof atob !== "function") return false;
+      try {
+        var payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        while (payload.length % 4) payload += "=";
+        var role = JSON.parse(atob(payload)).role;
+        return role === "anon" || role === "service_role";
+      } catch (_) {
+        return false;
+      }
     }
 
     async function tokenFromGetter(allowAnonymousFallback) {
@@ -120,6 +134,11 @@
 
     function safePath(value) {
       if (typeof value !== "string" || !value.trim()) throw new Error("无效的文件路径");
+      if (/[\u0000-\u001f\u007f-\u009f]/.test(value)) throw new Error("无效的文件路径");
+      var segments = value.split("/");
+      for (var index = 0; index < segments.length; index++) {
+        if (!segments[index] || segments[index] === "." || segments[index] === "..") throw new Error("无效的文件路径");
+      }
       return value;
     }
 

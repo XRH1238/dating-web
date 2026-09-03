@@ -16,6 +16,14 @@ function testWatchdog(ms) {
   return new Promise((_, reject) => setTimeout(() => reject(new Error('测试看门狗超时')), ms));
 }
 
+function legacyJwtWithRole(role) {
+  return [
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+    Buffer.from(JSON.stringify({ role, sub: 'legacy-key' })).toString('base64url'),
+    'legacy-signature',
+  ].join('.');
+}
+
 test('页面使用本地云端客户端，不再依赖第三方 Supabase CDN', () => {
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js/);
   assert.match(html, /<script src="cloud-data-client\.js\?v=[^"]+"><\/script>/);
@@ -387,6 +395,8 @@ test('无效、错误或抛错的认证 getter 都会让 SELECT 匿名读取', a
     async () => 'storage-publishable',
     async () => 'sb_publishable_third_party',
     async () => 'sb_secret_third_party',
+    async () => legacyJwtWithRole('anon'),
+    async () => legacyJwtWithRole('service_role'),
   ];
 
   for (const getAccessToken of getters) {
@@ -408,8 +418,11 @@ test('无效、错误或抛错的认证 getter 都会让 SELECT 匿名读取', a
   }
 });
 
-test('任一公开 key 或空 token 不能授权数据库写入或网关操作', async () => {
-  for (const token of [null, 'main-publishable', 'storage-publishable', 'sb_publishable_third_party', 'sb_secret_third_party']) {
+test('任一公开或 legacy privileged key 都不能授权数据库写入或网关操作', async () => {
+  for (const token of [
+    null, 'main-publishable', 'storage-publishable', 'sb_publishable_third_party', 'sb_secret_third_party',
+    legacyJwtWithRole('anon'), legacyJwtWithRole('service_role'),
+  ]) {
     const calls = [];
     const client = dataModule.createCloudDataClient({
       url: 'https://primary.supabase.co',
@@ -571,7 +584,7 @@ test('网关整次上传和删除操作的 deadline 覆盖签名、PUT 与删除
   assert.equal(deleteCalls.length, 1);
 });
 
-test('上传与删除路径必须是有效的非空字符串数组，且不会请求', async () => {
+test('上传与删除路径必须是安全的非空字符串数组，且不会请求', async () => {
   const calls = [];
   const client = dataModule.createCloudDataClient({
     url: 'https://example.supabase.co', key: 'publishable-key',
@@ -580,13 +593,23 @@ test('上传与删除路径必须是有效的非空字符串数组，且不会�
       return { ok: true, status: 200, async text() { return '[]'; } };
     },
   });
-  for (const invalidPath of ['', '   ', null, 1, {}]) {
+  for (const invalidPath of [
+    '', '   ', null, 1, {}, '../other-bucket/escape.jpg', 'records//a.jpg', 'records/./a.jpg',
+    'records/../a.jpg', 'records/\u0000a.jpg',
+  ]) {
     await assert.rejects(() => client.upload('love-photos', invalidPath, { type: 'image/jpeg' }));
   }
-  for (const invalidPaths of [undefined, 'records/a.jpg', ['', 'records/a.jpg'], ['   '], [1]]) {
+  for (const invalidPaths of [
+    undefined, 'records/a.jpg', ['', 'records/a.jpg'], ['   '], [1], ['../other-bucket/escape.jpg'],
+    ['records//a.jpg'], ['records/./a.jpg'], ['records/../a.jpg'], ['records/\u0000a.jpg'],
+  ]) {
     await assert.rejects(() => client.removeObjects('love-photos', invalidPaths));
   }
   assert.equal(calls.length, 0);
+  await client.upload('love-photos', 'records/恋爱/日落.jpg', { type: 'image/jpeg' });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /records\/%E6/);
+  assert.match(calls[0].url, /%E6%81%8B%E7%88%B1/);
 });
 
 test('配置网关时 Storage 删除使用主 JWT，空路径不请求', async () => {
