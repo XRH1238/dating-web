@@ -15,7 +15,7 @@ const MAX_DELETE_PATHS = 40;
 const PRODUCTION_ORIGIN = "https://xrh1238.github.io";
 const LOCAL_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/;
 const CITY_SEGMENT = /^[\p{L}\p{N}_ -]+$/u;
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
+const FORBIDDEN_UNICODE_CHARACTERS = /[\p{Cc}\p{Cf}]/u;
 
 function allowedOrigin(request: Request): string | null {
   const origin = request.headers.get("Origin");
@@ -55,6 +55,7 @@ function isAllowedCitySegment(segment: string): boolean {
 
 function decodedSegmentIsSafe(segment: string): boolean {
   let decoded = segment;
+  if (FORBIDDEN_UNICODE_CHARACTERS.test(decoded)) return false;
   for (let pass = 0; pass < 5; pass += 1) {
     let next: string;
     try {
@@ -63,15 +64,16 @@ function decodedSegmentIsSafe(segment: string): boolean {
       return false;
     }
     decoded = next;
+    if (FORBIDDEN_UNICODE_CHARACTERS.test(decoded)) return false;
     if (!/%[0-9a-f]{2}/i.test(decoded)) break;
   }
   return !/%[0-9a-f]{2}/i.test(decoded) && decoded !== "." && decoded !== ".." &&
-    !decoded.includes("/") && !decoded.includes("\\") && !CONTROL_CHARACTERS.test(decoded);
+    !decoded.includes("/") && !decoded.includes("\\");
 }
 
 function isSafeObjectPath(value: unknown): value is string {
   if (typeof value !== "string" || !value || value.length > 1024) return false;
-  if (value.startsWith("/") || value.endsWith("/") || value.includes("\\") || CONTROL_CHARACTERS.test(value)) {
+  if (value.startsWith("/") || value.endsWith("/") || value.includes("\\") || FORBIDDEN_UNICODE_CHARACTERS.test(value)) {
     return false;
   }
   const segments = value.split("/");

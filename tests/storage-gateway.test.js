@@ -157,6 +157,7 @@ test('valid authenticated upload signs the exact allowlisted path', async () => 
 test('safe Unicode gallery folder and supported fixed folders are accepted', async () => {
   for (const objectPath of [
     '厦门市/海边 日落.jpg',
+    'records/海边🏖️.jpg',
     'capsules/memory.mov',
     'unplaced/live-photo.heic',
   ]) {
@@ -166,18 +167,22 @@ test('safe Unicode gallery folder and supported fixed folders are accepted', asy
   }
 });
 
-test('unsafe raw and percent-encoded traversal paths are rejected', async () => {
+test('unsafe raw, Unicode-control and encoded paths are rejected before Storage', async () => {
   const unsafePaths = [
     '/records/a.jpg', 'records/a.jpg/', 'records//a.jpg', 'records/./a.jpg',
     'records/../a.jpg', '../secret', 'records\\a.jpg', 'records/a\u0000.jpg',
     'records/%2e%2e/secret', 'records/%2E./secret', 'records/%2fsecret',
     'records/%5Csecret', 'records/%00secret', '%2e%2e/secret',
     'records/%252e%252e/secret', 'records/%252fsecret', 'records/%2500secret',
+    'records/a\u0085.jpg', 'records/a\u009f.jpg', 'records/a\u200b.jpg',
+    'records/a%C2%85.jpg', 'records/a%C2%9F.jpg', 'records/a%E2%80%8B.jpg',
+    'records/a%25C2%2585.jpg', 'records/a%25E2%2580%258B.jpg',
   ];
   for (const objectPath of unsafePaths) {
     const { response, calls } = await invoke({ ...validSignRequest, path: objectPath }, 'valid-user-jwt');
     assert.equal(response.status, 400, objectPath);
     assert.deepEqual(calls.sign, []);
+    assert.deepEqual(calls.remove, []);
   }
 });
 
