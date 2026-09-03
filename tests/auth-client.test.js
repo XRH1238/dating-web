@@ -130,7 +130,7 @@ test('signOut 带用户 Bearer 且无论网络结果都清除本地会话', asyn
   });
   await client.signInWithPassword('a@example.com', 'password');
   await assert.rejects(() => client.signOut(), /503/);
-  assert.equal(calls[1].url, 'https://example.supabase.co/auth/v1/logout');
+  assert.equal(calls[1].url, 'https://example.supabase.co/auth/v1/logout?scope=local');
   assert.equal(calls[1].options.method, 'POST');
   assert.deepEqual(calls[1].options.headers, {
     apikey: 'publishable-key',
@@ -559,15 +559,19 @@ test('recovery 接管 pending signIn，只有最新 mutation 能落地', async (
   assert.equal((await client.getSession()).access_token, 'recovery');
 });
 
-test('pending signOut 完成后新登录会话不被旧退出响应清除', async () => {
+test('同账号 pending signOut 只局部撤销旧 token，完成后不清除新登录会话', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const storage = createStorage({
-    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'old-refresh', expires_at: 1700003600, user: { id: 'old' } }),
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'old-refresh', expires_at: 1700003600, user: { id: 'u1' } }),
   });
   const logout = deferred();
-  const { client } = createHarness(async (url) => {
-    if (url.endsWith('/auth/v1/logout')) return logout.promise;
-    return jsonResponse(wireSession({ id: 'new', email: 'new@example.com' }));
+  const revokedTokens = [];
+  const { client, calls } = createHarness(async (url, options) => {
+    if (url.endsWith('/auth/v1/logout?scope=local')) {
+      revokedTokens.push(options.headers.Authorization.replace('Bearer ', ''));
+      return logout.promise;
+    }
+    return jsonResponse(wireSession({ id: 'u1', email: 'new@example.com' }));
   }, { storage, now: () => 1700000000 });
   const signOutPromise = client.signOut();
   await Promise.resolve();
@@ -575,8 +579,10 @@ test('pending signOut 完成后新登录会话不被旧退出响应清除', asyn
   logout.resolve(jsonResponse(null, 204));
   await signOutPromise;
 
-  assert.equal(newSession.user.id, 'new');
-  assert.equal((await client.getSession()).user.id, 'new');
+  assert.equal(calls[0].url, 'https://example.supabase.co/auth/v1/logout?scope=local');
+  assert.deepEqual(revokedTokens, ['old']);
+  assert.equal(newSession.user.id, 'u1');
+  assert.equal((await client.getSession()).access_token, 'jwt-u1');
 });
 
 test('pending updatePassword 被 signOut 后不会更新用户或抛 TypeError', async () => {
@@ -656,11 +662,22 @@ test('pending updatePassword 不会覆盖已切换的新账号', async () => {
 test('Auth 配置只接受绝对 http/https URL 且 key 非空', () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const validFetch = async () => jsonResponse(null, 204);
-  for (const url of ['', '/relative', 'javascript:alert(1)', 'file:///tmp/auth']) {
+  for (const url of [
+    '', '/relative', 'javascript:alert(1)', 'file:///tmp/auth',
+    'https://user:pass@example.supabase.co', 'https://example.supabase.co?redirect=evil', 'https://example.supabase.co#fragment',
+  ]) {
     assert.throws(() => authModule.createAuthClient({ url, key: 'publishable', fetchImpl: validFetch }), /URL/);
   }
   assert.throws(() => authModule.createAuthClient({ url: 'https://example.supabase.co', key: '', fetchImpl: validFetch }), /key/);
   assert.doesNotThrow(() => authModule.createAuthClient({ url: 'http://localhost:54321', key: 'publishable', fetchImpl: validFetch }));
+});
+
+test('Auth URL 规范化可选基础 path 并去除尾斜杠', async () => {
+  const { client, calls } = createHarness(async () => jsonResponse(wireSession({ id: 'u1' })), {
+    url: 'https://example.supabase.co/custom-auth///',
+  });
+  await client.signInWithPassword('a@example.com', 'password');
+  assert.equal(calls[0].url, 'https://example.supabase.co/custom-auth/auth/v1/token?grant_type=password');
 });
 
 test('密码登录 wire 响应缺少必需字段时拒绝且不持久化', async () => {

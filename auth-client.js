@@ -75,15 +75,19 @@
     return session;
   }
 
-  function isAbsoluteHttpUrl(value) {
+  function normalizeBaseUrl(value) {
     try {
+      if (/[?#]/.test(value)) return null;
       if (typeof URL === "function") {
         var parsed = new URL(value);
-        return (parsed.protocol === "http:" || parsed.protocol === "https:") && !!parsed.hostname;
+        if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || !parsed.hostname || parsed.username || parsed.password) return null;
+        return parsed.origin + parsed.pathname.replace(/\/+$/, "");
       }
-      return /^https?:\/\/[^/?#\s]+(?:[/?#]|$)/i.test(value);
+      var fallback = /^(https?):\/\/([^/?#\s@]+)(\/[^?#\s]*)?$/i.exec(value);
+      if (!fallback) return null;
+      return fallback[1].toLowerCase() + "://" + fallback[2] + (fallback[3] || "").replace(/\/+$/, "");
     } catch (_) {
-      return false;
+      return null;
     }
   }
 
@@ -102,8 +106,8 @@
   function createAuthClient(options) {
     options = options || {};
     var rawUrl = String(options.url || "").trim();
-    if (!isAbsoluteHttpUrl(rawUrl)) throw new Error("认证 URL 必须是绝对 http/https URL");
-    var baseUrl = rawUrl.replace(/\/$/, "");
+    var baseUrl = normalizeBaseUrl(rawUrl);
+    if (!baseUrl) throw new Error("认证 URL 必须是无凭据、无 query/hash 的绝对 http/https URL");
     var key = options.key;
     if (key == null || String(key).trim() === "") throw new Error("认证 key 不能为空");
     var storage = options.storage === undefined ? defaultStorage() : options.storage;
@@ -326,7 +330,7 @@
         var error = null;
         try {
           if (oldSession && oldSession.access_token) {
-            await authRequest("/auth/v1/logout", {
+            await authRequest("/auth/v1/logout?scope=local", {
               method: "POST",
               headers: { Authorization: "Bearer " + oldSession.access_token },
             });
