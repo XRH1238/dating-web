@@ -87,6 +87,28 @@ test('轻量云端客户端能直接读取 Supabase REST 表', async () => {
   assert.equal(calls[0].options.headers.Authorization, undefined);
 });
 
+test('数据表和 Storage bucket 必须是非空字符串，且不会请求', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+
+  for (const table of [undefined, null, '', 1, {}]) {
+    await assert.rejects(() => client.select(table), /无效的数据表名称/);
+  }
+  for (const bucket of [undefined, null, '', 1, {}]) {
+    await assert.rejects(() => client.upload(bucket, 'records/a.jpg', { type: 'image/jpeg' }), /无效的 Storage bucket/);
+    await assert.rejects(() => client.removeObjects(bucket, ['records/a.jpg']), /无效的 Storage bucket/);
+    assert.throws(() => client.getPublicUrl(bucket, 'records/a.jpg'), /无效的 Storage bucket/);
+  }
+  assert.equal(calls.length, 0);
+});
+
 test('登录后数据库 SELECT 使用主用户 JWT，匿名时不发送 Authorization', async () => {
   const calls = [];
   const client = dataModule.createCloudDataClient({

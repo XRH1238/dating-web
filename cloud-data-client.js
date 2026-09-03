@@ -161,7 +161,7 @@
         signedUrl.username ||
         signedUrl.password ||
         signedUrl.origin !== storageUrl.origin ||
-        signedUrl.pathname !== "/storage/v1/object/upload/sign/" + safeSegment(bucket) + "/" + encodedPath(path)
+        signedUrl.pathname !== "/storage/v1/object/upload/sign/" + safeBucket(bucket) + "/" + encodedPath(path)
       ) {
         throw new Error("网关返回的上传地址无效");
       }
@@ -185,15 +185,23 @@
       return typeof response.json === "function" ? response.json() : null;
     }
 
-    function safeSegment(value) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error("无效的数据表名称");
+    function safeSegment(value, message) {
+      if (typeof value !== "string" || !value || !/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error(message);
       return value;
+    }
+
+    function safeTable(value) {
+      return safeSegment(value, "无效的数据表名称");
+    }
+
+    function safeBucket(value) {
+      return safeSegment(value, "无效的 Storage bucket");
     }
 
     return {
       select: async function(table) {
         return withTimeout(async function(signal) {
-          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeSegment(table) + "?select=*&order=created_at.desc", {
+          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeTable(table) + "?select=*&order=created_at.desc", {
             headers: await databaseHeaders(),
           }, signal);
           return parse(response);
@@ -201,7 +209,7 @@
       },
       insert: async function(table, rows) {
         return withTimeout(async function(signal) {
-          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeSegment(table), {
+          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeTable(table), {
             method: "POST",
             headers: await databaseHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }, true),
             body: JSON.stringify(rows),
@@ -211,7 +219,7 @@
       },
       update: async function(table, id, values) {
         return withTimeout(async function(signal) {
-          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeSegment(table) + "?id=eq." + encodeURIComponent(id), {
+          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeTable(table) + "?id=eq." + encodeURIComponent(id), {
             method: "PATCH",
             headers: await databaseHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }, true),
             body: JSON.stringify(values),
@@ -221,7 +229,7 @@
       },
       remove: async function(table, id) {
         return withTimeout(async function(signal) {
-          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeSegment(table) + "?id=eq." + encodeURIComponent(id), {
+          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeTable(table) + "?id=eq." + encodeURIComponent(id), {
             method: "DELETE",
             headers: await databaseHeaders({ Prefer: "return=minimal" }, true),
           }, signal);
@@ -229,7 +237,7 @@
         });
       },
       upload: async function(bucket, path, file) {
-        bucket = safeSegment(bucket);
+        bucket = safeBucket(bucket);
         path = safePath(path);
         var encoded = encodedPath(path);
         return withTimeout(async function(signal) {
@@ -266,7 +274,7 @@
         });
       },
       removeObjects: async function(bucket, paths) {
-        bucket = safeSegment(bucket);
+        bucket = safeBucket(bucket);
         var prefixes = safePaths(paths);
         if (!prefixes.length) return [];
         return withTimeout(async function(signal) {
@@ -289,7 +297,7 @@
       },
       getPublicUrl: function(bucket, path) {
         var encodedPath = path.split("/").map(encodeURIComponent).join("/");
-        return storageBaseUrl + "/storage/v1/object/public/" + safeSegment(bucket) + "/" + encodedPath;
+        return storageBaseUrl + "/storage/v1/object/public/" + safeBucket(bucket) + "/" + encodedPath;
       },
     };
   }
