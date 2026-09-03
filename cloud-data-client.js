@@ -65,8 +65,24 @@
       }
     }
 
+    function normalizeUserToken(token) {
+      if (typeof token !== "string") return null;
+      var normalized = token.trim();
+      return normalized && normalized !== key && normalized !== storageKey ? normalized : null;
+    }
+
+    async function tokenFromGetter(allowAnonymousFallback) {
+      if (!getAccessToken) return null;
+      try {
+        return normalizeUserToken(await getAccessToken());
+      } catch (error) {
+        if (allowAnonymousFallback) return null;
+        throw error;
+      }
+    }
+
     async function databaseHeaders(extra, requireUser) {
-      var token = getAccessToken ? await getAccessToken() : null;
+      var token = await tokenFromGetter(!requireUser);
       if (requireUser && getAccessToken && !token) throw new Error("请先登录后再保存");
       return Object.assign({ apikey: key }, token ? { Authorization: "Bearer " + token } : {}, extra || {});
     }
@@ -76,7 +92,7 @@
     }
 
     async function requiredUserToken() {
-      var token = getAccessToken ? await getAccessToken() : null;
+      var token = await tokenFromGetter(false);
       if (!token) throw new Error("请先登录后再保存");
       return token;
     }
@@ -92,6 +108,8 @@
       }
       if (
         (signedUrl.protocol !== "https:" && signedUrl.protocol !== "http:") ||
+        signedUrl.username ||
+        signedUrl.password ||
         signedUrl.origin !== storageUrl.origin ||
         signedUrl.pathname.indexOf("/storage/v1/object/upload/sign/") !== 0
       ) {
@@ -103,7 +121,9 @@
     async function parse(response) {
       if (!response.ok) {
         var details = typeof response.text === "function" ? await response.text() : "";
-        throw new Error("云端请求失败（" + response.status + "）" + (details ? ": " + details : ""));
+        var error = new Error("云端请求失败（" + response.status + "）" + (details ? ": " + details : ""));
+        error.status = response.status;
+        throw error;
       }
       if (response.status === 204) return null;
       if (typeof response.text === "function") {

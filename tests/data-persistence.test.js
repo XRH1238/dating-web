@@ -236,6 +236,9 @@ test('网关返回跨站或错误路径的签名 URL 时拒绝上传', async () 
   for (const signedUrl of [
     'https://attacker.example/storage/v1/object/upload/sign/love-photos/records/a.jpg',
     'https://storage.supabase.co/storage/v1/object/public/love-photos/records/a.jpg',
+    'https://attacker@storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg',
+    'https://storage.supabase.co:444/storage/v1/object/upload/sign/love-photos/records/a.jpg',
+    'https://storage.supabase.co/storage/v1/object/upload/sign%2Frecords/a.jpg',
   ]) {
     const calls = [];
     const client = dataModule.createCloudDataClient({
@@ -253,6 +256,149 @@ test('网关返回跨站或错误路径的签名 URL 时拒绝上传', async () 
     await assert.rejects(() => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])));
     assert.equal(calls.length, 1);
   }
+});
+
+test('无效、错误或抛错的认证 getter 都会让 SELECT 匿名读取', async () => {
+  const key = 'main-publishable';
+  const getters = [
+    async () => null,
+    async () => '',
+    async () => '   ',
+    async () => ({ access_token: 'not-a-string' }),
+    async () => { throw new Error('认证服务不可用'); },
+    async () => key,
+    async () => 'storage-publishable',
+  ];
+
+  for (const getAccessToken of getters) {
+    const calls = [];
+    const client = dataModule.createCloudDataClient({
+      url: 'https://primary.supabase.co',
+      key,
+      storageKey: 'storage-publishable',
+      getAccessToken,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, status: 200, async text() { return '[]'; } };
+      },
+    });
+
+    await assert.doesNotReject(() => client.select('love_todos'));
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].options.headers, { apikey: key });
+  }
+});
+
+test('任一 publishable key 或空 token 不能授权数据库写入或网关操作', async () => {
+  for (const token of [null, 'main-publishable', 'storage-publishable']) {
+    const calls = [];
+    const client = dataModule.createCloudDataClient({
+      url: 'https://primary.supabase.co',
+      key: 'main-publishable',
+      storageUrl: 'https://storage.supabase.co',
+      storageKey: 'storage-publishable',
+      storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+      getAccessToken: async () => token,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, status: 200, async text() { return '[]'; } };
+      },
+    });
+
+    await assert.rejects(() => client.insert('love_todos', [{ text: '看海' }]), /请先登录/);
+    await assert.rejects(() => client.update('love_todos', 'todo 1', { text: '看云' }), /请先登录/);
+    await assert.rejects(() => client.remove('love_todos', 'todo 1'), /请先登录/);
+    await assert.rejects(() => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])), /请先登录/);
+    await assert.rejects(() => client.removeObjects('love-photos', ['records/a.jpg']), /请先登录/);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('认证 getter 抛错时写入与网关操作会在 fetch 前传播错误', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    getAccessToken: async () => { throw new Error('认证服务不可用'); },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+
+  await assert.rejects(() => client.insert('love_todos', [{ text: '看海' }]), /认证服务不可用/);
+  await assert.rejects(() => client.update('love_todos', 'todo 1', { text: '看云' }), /认证服务不可用/);
+  await assert.rejects(() => client.remove('love_todos', 'todo 1'), /认证服务不可用/);
+  await assert.rejects(() => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])), /认证服务不可用/);
+  await assert.rejects(() => client.removeObjects('love-photos', ['records/a.jpg']), /认证服务不可用/);
+  assert.equal(calls.length, 0);
+});
+
+test('网关签名失败时带 status 抛错且不继续 PUT', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: false, status: 500, async text() { return 'gateway unavailable'; } };
+    },
+  });
+
+  await assert.rejects(
+    () => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])),
+    error => error.status === 500 && /500/.test(error.message)
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('签名 PUT 失败时保留 HTTP status', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (calls.length === 1) {
+        return { ok: true, status: 200, async text() { return JSON.stringify({ signedUrl: 'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg?token=one' }); } };
+      }
+      return { ok: false, status: 403, async text() { return 'expired'; } };
+    },
+  });
+
+  await assert.rejects(
+    () => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])),
+    error => error.status === 403 && /403/.test(error.message)
+  );
+  assert.equal(calls.length, 2);
+});
+
+test('网关删除失败时保留 HTTP status', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: false, status: 503, async text() { return 'gateway unavailable'; } };
+    },
+  });
+
+  await assert.rejects(
+    () => client.removeObjects('love-photos', ['records/a.jpg']),
+    error => error.status === 503 && /503/.test(error.message)
+  );
+  assert.equal(calls.length, 1);
 });
 
 test('配置网关时 Storage 删除使用主 JWT，空路径不请求', async () => {
