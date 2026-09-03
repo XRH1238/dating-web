@@ -30,11 +30,23 @@
     return result;
   }
 
+  function projectUser(value) {
+    if (!value || typeof value !== "object" || value.id == null || value.id === "") return null;
+    var result = { id: value.id };
+    if (typeof value.email === "string") result.email = value.email;
+    if (typeof value.role === "string") result.role = value.role;
+    return result;
+  }
+
   function hasValidExpiry(value) {
     return !!(value && (
-      (value.expires_at != null && isFinite(Number(value.expires_at))) ||
-      (value.expires_in != null && isFinite(Number(value.expires_in)))
+      (value.expires_at != null && isFinite(Number(value.expires_at)) && Number(value.expires_at) > 0) ||
+      (value.expires_in != null && isFinite(Number(value.expires_in)) && Number(value.expires_in) > 0)
     ));
+  }
+
+  function hasValidPersistedExpiry(value) {
+    return !!(value && value.expires_at != null && isFinite(Number(value.expires_at)) && Number(value.expires_at) > 0);
   }
 
   function cleanSession(value, previous, now) {
@@ -53,27 +65,58 @@
     } else if (previous && previous.expires_at != null) {
       session.expires_at = previous.expires_at;
     }
-    if (source.expires_in != null && isFinite(Number(source.expires_in))) {
-      session.expires_in = Math.floor(Number(source.expires_in));
+    if (source.user) {
+      var user = projectUser(source.user);
+      if (user) session.user = user;
+    } else if (previous && previous.user) {
+      var previousUser = projectUser(previous.user);
+      if (previousUser) session.user = previousUser;
     }
-    if (source.user) session.user = copyWithoutPassword(source.user);
-    else if (previous && previous.user) session.user = copyWithoutPassword(previous.user);
     return session;
+  }
+
+  function isAbsoluteHttpUrl(value) {
+    try {
+      if (typeof URL === "function") {
+        var parsed = new URL(value);
+        return (parsed.protocol === "http:" || parsed.protocol === "https:") && !!parsed.hostname;
+      }
+      return /^https?:\/\/[^/?#\s]+(?:[/?#]|$)/i.test(value);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isNonEmptyString(value) {
+    return typeof value === "string" && value.length > 0;
+  }
+
+  function hasValidPasswordResponse(value) {
+    return !!(value && isNonEmptyString(value.access_token) && isNonEmptyString(value.refresh_token) && hasValidExpiry(value) && projectUser(value.user));
+  }
+
+  function hasValidRefreshResponse(value) {
+    return !!(value && isNonEmptyString(value.access_token) && hasValidExpiry(value));
   }
 
   function createAuthClient(options) {
     options = options || {};
-    var baseUrl = String(options.url || "").replace(/\/$/, "");
+    var rawUrl = String(options.url || "").trim();
+    if (!isAbsoluteHttpUrl(rawUrl)) throw new Error("认证 URL 必须是绝对 http/https URL");
+    var baseUrl = rawUrl.replace(/\/$/, "");
     var key = options.key;
+    if (key == null || String(key).trim() === "") throw new Error("认证 key 不能为空");
     var storage = options.storage === undefined ? defaultStorage() : options.storage;
     var storageKey = options.storageKey || DEFAULT_STORAGE_KEY;
     var request = options.fetchImpl || (typeof fetch === "function" ? fetch.bind(globalThis) : null);
+    var timeoutMs = Number(options.timeoutMs);
+    if (!isFinite(timeoutMs) || timeoutMs <= 0) timeoutMs = 10000;
     var now = function() { return clock(options.now); };
     var location = options.location || (typeof window !== "undefined" ? window.location : null);
     var history = options.history || (typeof window !== "undefined" ? window.history : null);
     var listeners = [];
     var session = null;
-    var sessionEpoch = 0;
+    var mutationGeneration = 0;
     var pendingRefresh = null;
 
     if (!request) throw new Error("浏览器不支持认证请求");
@@ -90,8 +133,8 @@
         var raw = storage.getItem(storageKey);
         if (!raw) return null;
         var parsed = JSON.parse(raw);
-        var hasRefreshToken = parsed && typeof parsed.refresh_token === "string" && parsed.refresh_token.length > 0;
-        if (!hasRefreshToken || !hasValidExpiry(parsed)) {
+        var hasTokens = parsed && isNonEmptyString(parsed.access_token) && isNonEmptyString(parsed.refresh_token);
+        if (!hasTokens || !hasValidPersistedExpiry(parsed)) {
           clearStorage();
           return null;
         }
@@ -125,19 +168,26 @@
 
     function setSession(value, event) {
       session = value ? cleanSession(value, session, now()) : null;
-      sessionEpoch += 1;
       if (session) saveSession(session);
       else clearStorage();
       if (event) notify(event, session);
       return publicSession(session);
     }
 
-    function clearSession(event) {
+    function clearSession(event, forceNotify) {
       var hadSession = !!session;
       session = null;
-      sessionEpoch += 1;
       clearStorage();
-      if (event && hadSession) notify(event, null);
+      if (event && (hadSession || forceNotify)) notify(event, null);
+    }
+
+    function beginMutation() {
+      mutationGeneration += 1;
+      return mutationGeneration;
+    }
+
+    function staleMutationError() {
+      return new Error("认证操作已过期");
     }
 
     function shouldRefresh(value) {
@@ -177,18 +227,34 @@
       var requestConfig = Object.assign({}, requestOptions || {});
       requestConfig.headers = Object.assign({ apikey: key, "Content-Type": "application/json" }, requestConfig.headers || {});
       try {
-        return await readResponse(await request(baseUrl + path, requestConfig));
+        return await readResponse(await timedRequest(baseUrl + path, requestConfig));
       } catch (error) {
-        if (error && /^认证请求失败/.test(error.message || "")) throw error;
+        if (error && (/^认证请求失败/.test(error.message || "") || error.message === "认证请求超时")) throw error;
         throw new Error("认证网络请求失败：" + (error && error.message ? error.message : "未知错误"));
+      }
+    }
+
+    async function timedRequest(url, requestOptions) {
+      var controller = typeof AbortController === "function" ? new AbortController() : null;
+      var timer = null;
+      var config = Object.assign({}, requestOptions || {});
+      if (controller) config.signal = controller.signal;
+      try {
+        if (controller) timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+        return await request(url, config);
+      } catch (error) {
+        if (controller && controller.signal.aborted) throw new Error("认证请求超时");
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     }
 
     function refreshSession() {
       if (!session || !session.refresh_token) return Promise.resolve(publicSession(session));
       var oldSession = session;
-      var refreshEpoch = sessionEpoch;
-      if (pendingRefresh && pendingRefresh.session === oldSession && pendingRefresh.epoch === refreshEpoch) {
+      var refreshGeneration = mutationGeneration;
+      if (pendingRefresh && pendingRefresh.session === oldSession && pendingRefresh.generation === refreshGeneration) {
         return pendingRefresh.promise;
       }
       var promise = (async function() {
@@ -197,20 +263,20 @@
             method: "POST",
             body: JSON.stringify({ refresh_token: oldSession.refresh_token }),
           });
-          if (!response || typeof response.access_token !== "string" || !response.access_token || !hasValidExpiry(response)) {
+          if (!hasValidRefreshResponse(response)) {
             throw new Error("认证刷新响应无效");
           }
-          if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
+          if (session !== oldSession || mutationGeneration !== refreshGeneration) return null;
           var refreshed = cleanSession(response, oldSession, now());
           if (!refreshed) throw new Error("认证刷新响应无效");
           return setSession(refreshed, "TOKEN_REFRESHED");
         } catch (error) {
-          if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
+          if (session !== oldSession || mutationGeneration !== refreshGeneration) return null;
           clearSession("SIGNED_OUT");
           throw error;
         }
       })();
-      pendingRefresh = { session: oldSession, epoch: refreshEpoch, promise: promise };
+      pendingRefresh = { session: oldSession, generation: refreshGeneration, promise: promise };
       promise.then(function() {
         if (pendingRefresh && pendingRefresh.promise === promise) pendingRefresh = null;
       }, function() {
@@ -241,10 +307,13 @@
 
     return {
       signInWithPassword: async function(email, password) {
+        var generation = beginMutation();
         var response = await authRequest("/auth/v1/token?grant_type=password", {
           method: "POST",
           body: JSON.stringify({ email: email, password: password }),
         });
+        if (generation !== mutationGeneration) throw staleMutationError();
+        if (!hasValidPasswordResponse(response)) throw new Error("认证响应无效");
         var nextSession = cleanSession(response, null, now());
         if (!nextSession) throw new Error("认证响应无效");
         return setSession(nextSession, "SIGNED_IN");
@@ -252,6 +321,8 @@
 
       signOut: async function() {
         var oldSession = session;
+        beginMutation();
+        clearSession("SIGNED_OUT", true);
         var error = null;
         try {
           if (oldSession && oldSession.access_token) {
@@ -262,8 +333,6 @@
           }
         } catch (requestError) {
           error = requestError;
-        } finally {
-          clearSession("SIGNED_OUT");
         }
         if (error) throw error;
         return null;
@@ -315,14 +384,18 @@
             if (name != null && value != null) params[name] = value;
           });
           if (params.type !== "recovery" || !params.access_token || !params.refresh_token) return null;
-          var recovery = cleanSession({
+          var recoveryPayload = {
             access_token: params.access_token,
             refresh_token: params.refresh_token,
             expires_in: params.expires_in,
             token_type: params.token_type,
-          }, null, now());
+          };
+          if (!isNonEmptyString(recoveryPayload.access_token) || !isNonEmptyString(recoveryPayload.refresh_token) || !hasValidExpiry(recoveryPayload)) return null;
+          var recovery = cleanSession(recoveryPayload, null, now());
           if (!recovery) return null;
+          var generation = beginMutation();
           clearOnce();
+          if (generation !== mutationGeneration) return null;
           setSession(recovery, "PASSWORD_RECOVERY");
           return publicSession(recovery);
         } finally {
@@ -331,19 +404,31 @@
       },
 
       updatePassword: async function(newPassword) {
+        var operationGeneration = mutationGeneration;
         var current = await getCurrentSession();
         if (!current || !current.access_token) throw new Error("请先登录");
+        if (mutationGeneration !== operationGeneration) return null;
+        var targetSession = session;
+        if (!targetSession) return null;
+        var targetGeneration = operationGeneration;
         var response = await authRequest("/auth/v1/user", {
           method: "PUT",
           headers: { Authorization: "Bearer " + current.access_token },
           body: JSON.stringify({ password: newPassword }),
         });
+        if (session !== targetSession || mutationGeneration !== targetGeneration) return copyWithoutPassword(response);
         if (response && response.user) {
-          session.user = copyWithoutPassword(response.user);
-          saveSession(session);
+          var responseUser = projectUser(response.user);
+          if (responseUser) {
+            session.user = responseUser;
+            saveSession(session);
+          }
         } else if (response && response.id) {
-          session.user = copyWithoutPassword(response);
-          saveSession(session);
+          var updatedUser = projectUser(response);
+          if (updatedUser) {
+            session.user = updatedUser;
+            saveSession(session);
+          }
         }
         notify("USER_UPDATED", session);
         return copyWithoutPassword(response);

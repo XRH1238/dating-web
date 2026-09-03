@@ -4,12 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-let authModule = {};
-try {
-  authModule = require(path.resolve(__dirname, '..', 'auth-client.js'));
-} catch (_) {
-  // The first TDD run intentionally reaches this branch before implementation.
-}
+const authModule = require(path.resolve(__dirname, '..', 'auth-client.js'));
 
 function createStorage(initial) {
   const values = new Map(Object.entries(initial || {}));
@@ -285,7 +280,7 @@ test('成功退出通知 SIGNED_OUT 并清除会话', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const { client } = createHarness(async (_url, options) => {
     if (options.method === 'POST' && options.body) {
-      return jsonResponse({ access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600 });
+      return jsonResponse({ access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600, user: { id: 'u1' } });
     }
     return jsonResponse(null, 204);
   });
@@ -302,7 +297,7 @@ test('自定义 storageKey 持久化并恢复会话', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const storage = createStorage();
   const options = { storage, storageKey: 'custom-auth-key', now: () => 1700000000 };
-  const first = createHarness(async () => jsonResponse({ access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600 }), options);
+  const first = createHarness(async () => jsonResponse({ access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600, user: { id: 'u1' } }), options);
   await first.client.signInWithPassword('a@example.com', 'password');
   assert.ok(storage.value('custom-auth-key'));
   assert.equal(storage.value('dating-web:auth:v1'), undefined);
@@ -313,7 +308,7 @@ test('自定义 storageKey 持久化并恢复会话', async () => {
 test('登录响应中的 expires_at 保持绝对过期秒', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const { client } = createHarness(async () => jsonResponse({
-    access_token: 'jwt', refresh_token: 'refresh', expires_at: 1700004321,
+    access_token: 'jwt', refresh_token: 'refresh', expires_at: 1700004321, user: { id: 'u1' },
   }), { now: () => 1700000000 });
   assert.equal((await client.signInWithPassword('a@example.com', 'password')).expires_at, 1700004321);
 });
@@ -333,6 +328,7 @@ test('缺 refresh_token 或过期字段的损坏持久化会话被清除', async
   for (const value of [
     { access_token: 'jwt', expires_in: 3600 },
     { access_token: 'jwt', refresh_token: 'refresh' },
+    { access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600 },
   ]) {
     const storage = createStorage({ 'dating-web:auth:v1': JSON.stringify(value) });
     const { client } = createHarness(async () => jsonResponse({}), { storage, now: () => 1700000000 });
@@ -489,6 +485,283 @@ test('同一会话的并发 getAccessToken 和 getSession 共用单次 refresh',
   assert.equal(session.access_token, 'new');
   assert.equal(session.expires_at, 1700003600);
   assert.equal(calls.length, 1);
+});
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function wireSession(user) {
+  return {
+    access_token: 'jwt-' + user.id,
+    refresh_token: 'refresh-' + user.id,
+    expires_in: 3600,
+    user,
+  };
+}
+
+test('逆序完成的双登录只允许最新 generation 落地', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const first = deferred();
+  const second = deferred();
+  const { client } = createHarness(async (_url, options) => {
+    return JSON.parse(options.body).email === 'first@example.com' ? first.promise : second.promise;
+  }, { now: () => 1700000000 });
+  const firstLogin = client.signInWithPassword('first@example.com', 'password');
+  const secondLogin = client.signInWithPassword('second@example.com', 'password');
+
+  second.resolve(jsonResponse(wireSession({ id: 'second', email: 'second@example.com' })));
+  const secondSession = await secondLogin;
+  first.resolve(jsonResponse(wireSession({ id: 'first', email: 'first@example.com' })));
+  await assert.rejects(() => firstLogin, /操作已过期/);
+
+  assert.equal(secondSession.user.id, 'second');
+  assert.equal((await client.getSession()).user.id, 'second');
+});
+
+test('pending signIn 被 signOut 立即失效且登录响应不能落地', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const login = deferred();
+  const { client } = createHarness(async () => login.promise);
+  const events = [];
+  client.onAuthStateChange((event, value) => events.push([event, value]));
+  const loginPromise = client.signInWithPassword('a@example.com', 'password');
+  await Promise.resolve();
+  await client.signOut();
+  login.resolve(jsonResponse(wireSession({ id: 'u1', email: 'a@example.com' })));
+
+  await assert.rejects(() => loginPromise, /操作已过期/);
+  assert.equal(await client.getSession(), null);
+  assert.deepEqual(events, [['SIGNED_OUT', null]]);
+});
+
+test('recovery 接管 pending signIn，只有最新 mutation 能落地', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const login = deferred();
+  const location = {
+    href: 'https://example.supabase.co/reset#type=recovery&access_token=recovery&refresh_token=recovery-refresh&expires_in=900',
+    hash: '#type=recovery&access_token=recovery&refresh_token=recovery-refresh&expires_in=900',
+  };
+  const { client } = createHarness(async () => login.promise, { location, now: () => 1700000000 });
+  const loginPromise = client.signInWithPassword('a@example.com', 'password');
+  await Promise.resolve();
+  const recovery = await client.consumeRecoveryRedirect();
+  login.resolve(jsonResponse(wireSession({ id: 'u1', email: 'a@example.com' })));
+
+  await assert.rejects(() => loginPromise, /操作已过期/);
+  assert.equal(recovery.access_token, 'recovery');
+  assert.equal((await client.getSession()).access_token, 'recovery');
+});
+
+test('pending signOut 完成后新登录会话不被旧退出响应清除', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'old-refresh', expires_at: 1700003600, user: { id: 'old' } }),
+  });
+  const logout = deferred();
+  const { client } = createHarness(async (url) => {
+    if (url.endsWith('/auth/v1/logout')) return logout.promise;
+    return jsonResponse(wireSession({ id: 'new', email: 'new@example.com' }));
+  }, { storage, now: () => 1700000000 });
+  const signOutPromise = client.signOut();
+  await Promise.resolve();
+  const newSession = await client.signInWithPassword('new@example.com', 'password');
+  logout.resolve(jsonResponse(null, 204));
+  await signOutPromise;
+
+  assert.equal(newSession.user.id, 'new');
+  assert.equal((await client.getSession()).user.id, 'new');
+});
+
+test('pending updatePassword 被 signOut 后不会更新用户或抛 TypeError', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const update = deferred();
+  const { client } = createHarness(async (url) => {
+    if (url.endsWith('/auth/v1/user')) return update.promise;
+    if (url.endsWith('/auth/v1/logout')) return jsonResponse(null, 204);
+    return jsonResponse(wireSession({ id: 'u1', email: 'old@example.com' }));
+  });
+  await client.signInWithPassword('old@example.com', 'password');
+  const updatePromise = client.updatePassword('new-password');
+  await Promise.resolve();
+  await client.signOut();
+  update.resolve(jsonResponse({ id: 'u1', email: 'updated@example.com' }));
+
+  await assert.doesNotReject(() => updatePromise);
+  assert.equal(await client.getSession(), null);
+});
+
+test('同 tick 的 signOut 不会让 pending updatePassword 写入空会话', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const update = deferred();
+  const { client } = createHarness(async (url) => {
+    if (url.endsWith('/auth/v1/user')) return update.promise;
+    if (url.endsWith('/auth/v1/logout')) return jsonResponse(null, 204);
+    return jsonResponse(wireSession({ id: 'u1', email: 'old@example.com' }));
+  });
+  await client.signInWithPassword('old@example.com', 'password');
+  const updatePromise = client.updatePassword('new-password');
+  const signOutPromise = client.signOut();
+  await signOutPromise;
+  update.resolve(jsonResponse({ id: 'u1', email: 'updated@example.com' }));
+
+  await assert.doesNotReject(() => updatePromise);
+  assert.equal(await client.getSession(), null);
+});
+
+test('同 tick 的 recovery 使 updatePassword 停止使用旧账号 token', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const location = {
+    href: 'https://example.supabase.co/reset#type=recovery&access_token=recovery&refresh_token=recovery-refresh&expires_in=900',
+    hash: '#type=recovery&access_token=recovery&refresh_token=recovery-refresh&expires_in=900',
+  };
+  let userRequests = 0;
+  const { client } = createHarness(async (url) => {
+    if (url.endsWith('/auth/v1/user')) userRequests += 1;
+    return jsonResponse(wireSession({ id: 'u1', email: 'old@example.com' }));
+  }, { location, now: () => 1700000000 });
+  await client.signInWithPassword('old@example.com', 'password');
+  const updatePromise = client.updatePassword('new-password');
+  await client.consumeRecoveryRedirect();
+
+  assert.equal(await updatePromise, null);
+  assert.equal(userRequests, 0);
+  assert.equal((await client.getSession()).access_token, 'recovery');
+});
+
+test('pending updatePassword 不会覆盖已切换的新账号', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const update = deferred();
+  const { client } = createHarness(async (url, options) => {
+    if (url.endsWith('/auth/v1/user')) return update.promise;
+    const body = options.body ? JSON.parse(options.body) : {};
+    return jsonResponse(wireSession({ id: body.email === 'new@example.com' ? 'new' : 'old', email: body.email }));
+  });
+  await client.signInWithPassword('old@example.com', 'password');
+  const updatePromise = client.updatePassword('new-password');
+  await Promise.resolve();
+  await client.signInWithPassword('new@example.com', 'password');
+  update.resolve(jsonResponse({ id: 'old', email: 'updated-old@example.com' }));
+
+  await assert.doesNotReject(() => updatePromise);
+  assert.equal((await client.getSession()).user.email, 'new@example.com');
+});
+
+test('Auth 配置只接受绝对 http/https URL 且 key 非空', () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const validFetch = async () => jsonResponse(null, 204);
+  for (const url of ['', '/relative', 'javascript:alert(1)', 'file:///tmp/auth']) {
+    assert.throws(() => authModule.createAuthClient({ url, key: 'publishable', fetchImpl: validFetch }), /URL/);
+  }
+  assert.throws(() => authModule.createAuthClient({ url: 'https://example.supabase.co', key: '', fetchImpl: validFetch }), /key/);
+  assert.doesNotThrow(() => authModule.createAuthClient({ url: 'http://localhost:54321', key: 'publishable', fetchImpl: validFetch }));
+});
+
+test('密码登录 wire 响应缺少必需字段时拒绝且不持久化', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  for (const payload of [
+    { access_token: 'jwt', expires_in: 3600, user: { id: 'u1' } },
+    { access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600, user: {} },
+    { access_token: 'jwt', refresh_token: 'refresh', user: { id: 'u1' } },
+  ]) {
+    const storage = createStorage();
+    const { client } = createHarness(async () => jsonResponse(payload), { storage });
+    await assert.rejects(() => client.signInWithPassword('a@example.com', 'password'), /认证响应无效/);
+    assert.equal(storage.value('dating-web:auth:v1'), undefined);
+  }
+});
+
+test('recovery fragment 缺少有效 expiry 时不创建会话', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  for (const hash of [
+    '#type=recovery&access_token=token&refresh_token=refresh',
+    '#type=recovery&access_token=token&refresh_token=refresh&expires_in=0',
+  ]) {
+    const storage = createStorage();
+    const location = { href: 'https://example.supabase.co/reset' + hash, hash };
+    const { client } = createHarness(async () => jsonResponse({}), { storage, location });
+    assert.equal(await client.consumeRecoveryRedirect(), null);
+    assert.equal(await client.getSession(), null);
+    assert.equal(storage.value('dating-web:auth:v1'), undefined);
+  }
+});
+
+test('refresh 可以继承旧 refresh_token，但必须返回新的有效 access 与 expiry', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'old-refresh', expires_at: 1700000060 }),
+  });
+  const { client } = createHarness(async () => jsonResponse({ access_token: 'new', expires_in: 3600 }), {
+    storage,
+    now: () => 1700000000,
+  });
+
+  const session = await client.getSession();
+  assert.equal(session.access_token, 'new');
+  assert.equal(session.refresh_token, 'old-refresh');
+});
+
+test('会话只持久化最小 user 投影，不保留完整用户对象', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage();
+  const { client } = createHarness(async () => jsonResponse(wireSession({
+    id: 'u1', email: 'a@example.com', role: 'authenticated', password: 'secret',
+    user_metadata: { private_note: 'do not persist' }, app_metadata: { secret: 'do not persist' },
+  })), { storage });
+  await client.signInWithPassword('a@example.com', 'password');
+  assert.deepEqual(JSON.parse(storage.value('dating-web:auth:v1')).user, {
+    id: 'u1', email: 'a@example.com', role: 'authenticated',
+  });
+});
+
+test('认证请求超时返回中文超时错误', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const { client } = createHarness(async (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+  }), { timeoutMs: 5 });
+  await assert.rejects(() => client.signInWithPassword('a@example.com', 'password'), /认证请求超时/);
+});
+
+test('refresh 超时释放 single-flight、清会话并通知 SIGNED_OUT', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires_at: 1700000060 }),
+  });
+  const { client, calls } = createHarness(async (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+  }), { storage, timeoutMs: 5, now: () => 1700000000 });
+  const events = [];
+  client.onAuthStateChange((event, value) => events.push([event, value]));
+
+  await assert.rejects(() => client.getAccessToken(), /认证请求超时/);
+  assert.equal(await client.getAccessToken(), null);
+  assert.equal(calls.length, 1);
+  assert.equal(storage.value('dating-web:auth:v1'), undefined);
+  assert.deepEqual(events, [['SIGNED_OUT', null]]);
+});
+
+test('browser UMD 可实例化并使用默认 fetch', async () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '..', 'auth-client.js'), 'utf8');
+  const browserWindow = {};
+  const storage = createStorage();
+  let called = false;
+  const browserFetch = async () => {
+    called = true;
+    return jsonResponse(wireSession({ id: 'browser', email: 'browser@example.com' }));
+  };
+  const browserContext = { window: browserWindow, globalThis: {}, module: undefined, fetch: browserFetch, AbortController, setTimeout, clearTimeout };
+  vm.runInNewContext(source, browserContext, { filename: 'auth-client.js' });
+  const client = browserWindow.AuthClient.createAuthClient({
+    url: 'https://example.supabase.co', key: 'publishable', storage, now: () => 1700000000,
+  });
+  await client.signInWithPassword('browser@example.com', 'password');
+  assert.equal(called, true);
 });
 
 test('CommonJS 不污染 globalThis，浏览器 UMD 挂载 window.AuthClient', () => {
