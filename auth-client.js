@@ -74,6 +74,7 @@
     var listeners = [];
     var session = null;
     var sessionEpoch = 0;
+    var pendingRefresh = null;
 
     if (!request) throw new Error("浏览器不支持认证请求");
 
@@ -183,27 +184,39 @@
       }
     }
 
-    async function refreshSession() {
-      if (!session || !session.refresh_token) return publicSession(session);
+    function refreshSession() {
+      if (!session || !session.refresh_token) return Promise.resolve(publicSession(session));
       var oldSession = session;
       var refreshEpoch = sessionEpoch;
-      try {
-        var response = await authRequest("/auth/v1/token?grant_type=refresh_token", {
-          method: "POST",
-          body: JSON.stringify({ refresh_token: oldSession.refresh_token }),
-        });
-        if (!response || typeof response.access_token !== "string" || !response.access_token || !hasValidExpiry(response)) {
-          throw new Error("认证刷新响应无效");
-        }
-        if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
-        var refreshed = cleanSession(response, oldSession, now());
-        if (!refreshed) throw new Error("认证刷新响应无效");
-        return setSession(refreshed, "TOKEN_REFRESHED");
-      } catch (error) {
-        if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
-        clearSession("SIGNED_OUT");
-        throw error;
+      if (pendingRefresh && pendingRefresh.session === oldSession && pendingRefresh.epoch === refreshEpoch) {
+        return pendingRefresh.promise;
       }
+      var promise = (async function() {
+        try {
+          var response = await authRequest("/auth/v1/token?grant_type=refresh_token", {
+            method: "POST",
+            body: JSON.stringify({ refresh_token: oldSession.refresh_token }),
+          });
+          if (!response || typeof response.access_token !== "string" || !response.access_token || !hasValidExpiry(response)) {
+            throw new Error("认证刷新响应无效");
+          }
+          if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
+          var refreshed = cleanSession(response, oldSession, now());
+          if (!refreshed) throw new Error("认证刷新响应无效");
+          return setSession(refreshed, "TOKEN_REFRESHED");
+        } catch (error) {
+          if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
+          clearSession("SIGNED_OUT");
+          throw error;
+        }
+      })();
+      pendingRefresh = { session: oldSession, epoch: refreshEpoch, promise: promise };
+      promise.then(function() {
+        if (pendingRefresh && pendingRefresh.promise === promise) pendingRefresh = null;
+      }, function() {
+        if (pendingRefresh && pendingRefresh.promise === promise) pendingRefresh = null;
+      });
+      return promise;
     }
 
     session = loadSession();

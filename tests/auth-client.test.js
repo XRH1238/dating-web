@@ -464,6 +464,33 @@ test('并发 signOut 不会被已开始的 refresh 响应复活', async () => {
   assert.deepEqual(events, [['SIGNED_OUT', null]]);
 });
 
+test('同一会话的并发 getAccessToken 和 getSession 共用单次 refresh', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires_at: 1700000060 }),
+  });
+  let resolveRefresh;
+  const refreshResponse = new Promise((resolve) => {
+    resolveRefresh = () => resolve(jsonResponse({ access_token: 'new', refresh_token: 'new-refresh', expires_in: 3600 }));
+  });
+  const { client, calls } = createHarness(async (url) => {
+    if (url.includes('grant_type=refresh_token')) return refreshResponse;
+    return jsonResponse(null, 204);
+  }, { storage, now: () => 1700000000 });
+
+  const tokenPromise = client.getAccessToken();
+  const sessionPromise = client.getSession();
+  await Promise.resolve();
+  assert.equal(calls.length, 1);
+  resolveRefresh();
+  const [token, session] = await Promise.all([tokenPromise, sessionPromise]);
+
+  assert.equal(token, 'new');
+  assert.equal(session.access_token, 'new');
+  assert.equal(session.expires_at, 1700003600);
+  assert.equal(calls.length, 1);
+});
+
 test('CommonJS 不污染 globalThis，浏览器 UMD 挂载 window.AuthClient', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '..', 'auth-client.js'), 'utf8');
   const commonJsContext = { module: { exports: {} }, exports: {}, globalThis: {} };
