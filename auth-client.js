@@ -30,6 +30,13 @@
     return result;
   }
 
+  function hasValidExpiry(value) {
+    return !!(value && (
+      (value.expires_at != null && isFinite(Number(value.expires_at))) ||
+      (value.expires_in != null && isFinite(Number(value.expires_in)))
+    ));
+  }
+
   function cleanSession(value, previous, now) {
     if (!value || typeof value !== "object") return null;
     var source = Object.assign({}, previous || {}, value);
@@ -82,11 +89,7 @@
         if (!raw) return null;
         var parsed = JSON.parse(raw);
         var hasRefreshToken = parsed && typeof parsed.refresh_token === "string" && parsed.refresh_token.length > 0;
-        var hasExpiry = parsed && (
-          (parsed.expires_at != null && isFinite(Number(parsed.expires_at))) ||
-          (parsed.expires_in != null && isFinite(Number(parsed.expires_in)))
-        );
-        if (!hasRefreshToken || !hasExpiry) {
+        if (!hasRefreshToken || !hasValidExpiry(parsed)) {
           clearStorage();
           return null;
         }
@@ -185,7 +188,7 @@
           method: "POST",
           body: JSON.stringify({ refresh_token: oldSession.refresh_token }),
         });
-        if (!response || typeof response.access_token !== "string" || !response.access_token) {
+        if (!response || typeof response.access_token !== "string" || !response.access_token || !hasValidExpiry(response)) {
           throw new Error("认证刷新响应无效");
         }
         var refreshed = cleanSession(response, oldSession, now());
@@ -207,6 +210,14 @@
         return null;
       }
       return publicSession(session);
+    }
+
+    function clearRecoveryFragment() {
+      if (history && typeof history.replaceState === "function") {
+        var cleanUrl = baseUrl + "/";
+        if (location && location.href) cleanUrl = location.href.replace(/#.*/, "");
+        history.replaceState("", "", cleanUrl);
+      }
     }
 
     return {
@@ -269,6 +280,12 @@
         if (!hash || hash.charAt(0) !== "#") return null;
         var fragment = hash.slice(1);
         if (!/(?:^|&)type=recovery(?:&|$)/.test(fragment)) return null;
+        var clearAttempted = false;
+        function clearOnce() {
+          if (clearAttempted) return;
+          clearAttempted = true;
+          clearRecoveryFragment();
+        }
         try {
           var params = {};
           fragment.split("&").forEach(function(part) {
@@ -286,14 +303,11 @@
             token_type: params.token_type,
           }, null, now());
           if (!recovery) return null;
+          clearOnce();
           setSession(recovery, "PASSWORD_RECOVERY");
           return publicSession(recovery);
         } finally {
-          if (history && typeof history.replaceState === "function") {
-            var cleanUrl = baseUrl + "/";
-            if (location && location.href) cleanUrl = location.href.replace(/#.*/, "");
-            history.replaceState("", "", cleanUrl);
-          }
+          clearOnce();
         }
       },
 

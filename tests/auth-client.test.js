@@ -244,6 +244,24 @@ test('刷新返回缺少新 access_token 的 200 响应时清除会话并报错'
   assert.equal(storage.value('dating-web:auth:v1'), undefined);
 });
 
+test('刷新返回新 access_token 但缺少新过期字段时仍视为无效', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires_at: 1700000050 }),
+  });
+  const { client } = createHarness(async () => jsonResponse({ access_token: 'new' }), {
+    storage,
+    now: () => 1700000000,
+  });
+  const events = [];
+  client.onAuthStateChange((event, value) => events.push([event, value]));
+
+  await assert.rejects(() => client.getAccessToken(), /刷新响应无效/);
+  assert.equal(await client.getSession(), null);
+  assert.deepEqual(events, [['SIGNED_OUT', null]]);
+  assert.equal(storage.value('dating-web:auth:v1'), undefined);
+});
+
 test('成功刷新通知 TOKEN_REFRESHED 并返回新会话', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const storage = createStorage({
@@ -365,6 +383,54 @@ test('recovery 成功清理时保留页面 path 和 query', async () => {
   const { client } = createHarness(async () => jsonResponse({}), { location, history });
   await client.consumeRecoveryRedirect();
   assert.equal(historyCalls[0][2], 'https://example.supabase.co/reset?from=email&lang=zh');
+});
+
+test('PASSWORD_RECOVERY 通知触发前已清除 recovery fragment', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const location = {
+    href: 'https://example.supabase.co/reset?from=email#type=recovery&access_token=token&refresh_token=refresh&expires_in=900',
+    hash: '#type=recovery&access_token=token&refresh_token=refresh&expires_in=900',
+  };
+  const historyCalls = [];
+  const history = {
+    replaceState(...args) {
+      historyCalls.push(args);
+      location.hash = '';
+    },
+  };
+  const { client } = createHarness(async () => jsonResponse({}), { location, history });
+  let hashAtNotification;
+  client.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') hashAtNotification = location.hash;
+  });
+
+  await client.consumeRecoveryRedirect();
+
+  assert.equal(hashAtNotification, '');
+  assert.equal(historyCalls.length, 1);
+});
+
+test('过期阈值为 now+60 时刷新，而 now+61 时不刷新', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const nearExpiryStorage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old-60', refresh_token: 'refresh-60', expires_at: 1700000060 }),
+  });
+  const nearExpiry = createHarness(async () => jsonResponse({ access_token: 'new-60', refresh_token: 'new-refresh-60', expires_in: 3600 }), {
+    storage: nearExpiryStorage,
+    now: () => 1700000000,
+  });
+  assert.equal(await nearExpiry.client.getAccessToken(), 'new-60');
+  assert.equal(nearExpiry.calls.length, 1);
+
+  const safeStorage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old-61', refresh_token: 'refresh-61', expires_at: 1700000061 }),
+  });
+  const safe = createHarness(async () => jsonResponse({}), {
+    storage: safeStorage,
+    now: () => 1700000000,
+  });
+  assert.equal(await safe.client.getAccessToken(), 'old-61');
+  assert.equal(safe.calls.length, 0);
 });
 
 test('CommonJS 不污染 globalThis，浏览器 UMD 挂载 window.AuthClient', () => {
