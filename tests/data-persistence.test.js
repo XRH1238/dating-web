@@ -72,6 +72,67 @@ test('轻量云端客户端能直接读取 Supabase REST 表', async () => {
   assert.deepEqual(rows, [{ id: 7, text: '一起旅行' }]);
   assert.match(calls[0].url, /\/rest\/v1\/love_todos\?select=\*&order=created_at\.desc/);
   assert.equal(calls[0].options.headers.apikey, 'publishable-key');
+  assert.equal(calls[0].options.headers.Authorization, undefined);
+});
+
+test('登录后数据库 SELECT 使用主用户 JWT，匿名时不发送 Authorization', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+
+  await client.select('love_todos');
+
+  assert.equal(calls[0].options.headers.apikey, 'main-publishable');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer user-jwt');
+});
+
+test('三种数据库写入使用主用户 JWT，而不是 publishable key', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 204, async text() { return ''; } };
+    },
+  });
+
+  await client.insert('love_todos', [{ text: '看海' }]);
+  await client.update('love_todos', 'todo 1', { text: '看云' });
+  await client.remove('love_todos', 'todo 1');
+
+  assert.deepEqual(calls.map(call => call.options.headers.Authorization), [
+    'Bearer user-jwt', 'Bearer user-jwt', 'Bearer user-jwt',
+  ]);
+  calls.forEach(call => assert.equal(call.options.headers.apikey, 'main-publishable'));
+});
+
+test('配置认证但没有 JWT 时数据库写入会在请求前拒绝', async () => {
+  for (const token of [null, '']) {
+    const calls = [];
+    const client = dataModule.createCloudDataClient({
+      url: 'https://primary.supabase.co',
+      key: 'main-publishable',
+      getAccessToken: async () => token,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, status: 204, async text() { return ''; } };
+      },
+    });
+
+    await assert.rejects(() => client.insert('love_todos', [{ text: '看海' }]), /请先登录/);
+    await assert.rejects(() => client.update('love_todos', 'todo 1', { text: '看云' }), /请先登录/);
+    await assert.rejects(() => client.remove('love_todos', 'todo 1'), /请先登录/);
+    assert.equal(calls.length, 0);
+  }
 });
 
 test('云端请求失败时抛出可识别错误', async () => {
@@ -128,6 +189,99 @@ test('Storage 文件可以按路径批量删除', async () => {
   assert.equal(calls[0].url, 'https://example.supabase.co/storage/v1/object/love-photos');
   assert.equal(calls[0].options.method, 'DELETE');
   assert.deepEqual(JSON.parse(calls[0].options.body), { prefixes: ['records/a.webp', 'records/a.mov'] });
+  assert.equal(calls[0].options.headers.Authorization, undefined);
+});
+
+test('网关签名上传使用主 JWT，并以不带凭据的 FormData PUT 上传 Blob', async () => {
+  const calls = [];
+  const file = new Blob(['image-data'], { type: 'image/jpeg' });
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageUrl: 'https://storage.supabase.co',
+    storageKey: 'storage-publishable',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (calls.length === 1) {
+        return {
+          ok: true,
+          status: 200,
+          async text() { return JSON.stringify({ signedUrl: 'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg?token=one' }); },
+        };
+      }
+      return { ok: true, status: 200, async text() { return '{}'; } };
+    },
+  });
+
+  await client.upload('love-photos', 'records/a.jpg', file);
+
+  assert.equal(calls[0].url, 'https://primary.supabase.co/functions/v1/storage-gateway');
+  assert.deepEqual(calls[0].options.headers, {
+    apikey: 'main-publishable', Authorization: 'Bearer user-jwt', 'Content-Type': 'application/json',
+  });
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    action: 'sign-upload', backend: 'secondary', bucket: 'love-photos', path: 'records/a.jpg',
+  });
+  assert.equal(calls[1].url, 'https://storage.supabase.co/storage/v1/object/upload/sign/love-photos/records/a.jpg?token=one');
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.deepEqual(calls[1].options.headers, { 'x-upsert': 'false' });
+  assert.equal(calls[1].options.body instanceof FormData, true);
+  assert.equal(calls[1].options.body.get('cacheControl'), '3600');
+  assert.equal(calls[1].options.body.get('') instanceof Blob, true);
+});
+
+test('网关返回跨站或错误路径的签名 URL 时拒绝上传', async () => {
+  for (const signedUrl of [
+    'https://attacker.example/storage/v1/object/upload/sign/love-photos/records/a.jpg',
+    'https://storage.supabase.co/storage/v1/object/public/love-photos/records/a.jpg',
+  ]) {
+    const calls = [];
+    const client = dataModule.createCloudDataClient({
+      url: 'https://primary.supabase.co',
+      key: 'main-publishable',
+      storageUrl: 'https://storage.supabase.co',
+      storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+      getAccessToken: async () => 'user-jwt',
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, status: 200, async text() { return JSON.stringify({ signedUrl }); } };
+      },
+    });
+
+    await assert.rejects(() => client.upload('love-photos', 'records/a.jpg', new Blob(['image'])));
+    assert.equal(calls.length, 1);
+  }
+});
+
+test('配置网关时 Storage 删除使用主 JWT，空路径不请求', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    storageBackend: 'secondary',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+
+  assert.deepEqual(await client.removeObjects('love-photos', []), []);
+  await client.removeObjects('love-photos', ['records/a.jpg']);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://primary.supabase.co/functions/v1/storage-gateway');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.deepEqual(calls[0].options.headers, {
+    apikey: 'main-publishable', Authorization: 'Bearer user-jwt', 'Content-Type': 'application/json',
+  });
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    action: 'delete', backend: 'secondary', bucket: 'love-photos', paths: ['records/a.jpg'],
+  });
 });
 
 test('数据库与 Storage 请求分别使用主配置和 Storage 配置', async () => {
@@ -157,10 +311,13 @@ test('数据库与 Storage 请求分别使用主配置和 Storage 配置', async
     'https://primary.supabase.co/rest/v1/love_photos?id=eq.photo%201',
   ]);
   calls.slice(0, 4).forEach(call => assert.equal(call.options.headers.apikey, 'primary-key'));
+  calls.slice(0, 4).forEach(call => assert.equal(call.options.headers.Authorization, undefined));
   assert.equal(calls[4].url, 'https://storage.supabase.co/storage/v1/object/love-photos/records/test%20photo.jpg');
   assert.equal(calls[4].options.headers.apikey, 'storage-key');
+  assert.equal(calls[4].options.headers.Authorization, undefined);
   assert.equal(calls[5].url, 'https://storage.supabase.co/storage/v1/object/love-photos');
   assert.equal(calls[5].options.headers.apikey, 'storage-key');
+  assert.equal(calls[5].options.headers.Authorization, undefined);
   assert.equal(
     client.getPublicUrl('love-photos', 'records/test photo.jpg'),
     'https://storage.supabase.co/storage/v1/object/public/love-photos/records/test%20photo.jpg'
@@ -186,4 +343,38 @@ test('未提供 Storage 配置时继续使用主 Supabase', async () => {
     client.getPublicUrl('love-photos', 'gallery/a.jpg'),
     'https://primary.supabase.co/storage/v1/object/public/love-photos/gallery/a.jpg'
   );
+});
+
+test('只配置 storageUrl 时 Storage key 回退到主 key', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-key',
+    storageUrl: 'https://storage.supabase.co',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '{}'; } };
+    },
+  });
+
+  await client.upload('love-photos', 'gallery/a.jpg', { type: 'image/jpeg' });
+  assert.equal(calls[0].url, 'https://storage.supabase.co/storage/v1/object/love-photos/gallery/a.jpg');
+  assert.equal(calls[0].options.headers.apikey, 'main-key');
+});
+
+test('只配置 storageKey 时 Storage URL 回退到主 URL', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-key',
+    storageKey: 'storage-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '{}'; } };
+    },
+  });
+
+  await client.upload('love-photos', 'gallery/a.jpg', { type: 'image/jpeg' });
+  assert.equal(calls[0].url, 'https://primary.supabase.co/storage/v1/object/love-photos/gallery/a.jpg');
+  assert.equal(calls[0].options.headers.apikey, 'storage-key');
 });

@@ -43,6 +43,9 @@
     var key = options.key;
     var storageBaseUrl = String(options.storageUrl || options.url || "").replace(/\/$/, "");
     var storageKey = options.storageKey || key;
+    var getAccessToken = typeof options.getAccessToken === "function" ? options.getAccessToken : null;
+    var storageGatewayUrl = options.storageGatewayUrl ? String(options.storageGatewayUrl).replace(/\/$/, "") : "";
+    var storageBackend = options.storageBackend || "secondary";
     var timeoutMs = options.timeoutMs || 10000;
     var request = options.fetchImpl || (typeof fetch === "function" ? fetch.bind(globalThis) : null);
     if (!request) throw new Error("浏览器不支持云端请求");
@@ -62,12 +65,39 @@
       }
     }
 
-    function headers(extra) {
-      return Object.assign({ apikey: key, Authorization: "Bearer " + key }, extra || {});
+    async function databaseHeaders(extra, requireUser) {
+      var token = getAccessToken ? await getAccessToken() : null;
+      if (requireUser && getAccessToken && !token) throw new Error("请先登录后再保存");
+      return Object.assign({ apikey: key }, token ? { Authorization: "Bearer " + token } : {}, extra || {});
     }
 
     function storageHeaders(extra) {
-      return Object.assign({ apikey: storageKey, Authorization: "Bearer " + storageKey }, extra || {});
+      return Object.assign({ apikey: storageKey }, extra || {});
+    }
+
+    async function requiredUserToken() {
+      var token = getAccessToken ? await getAccessToken() : null;
+      if (!token) throw new Error("请先登录后再保存");
+      return token;
+    }
+
+    function signedUploadUrl(value) {
+      var signedUrl;
+      var storageUrl;
+      try {
+        signedUrl = new URL(value);
+        storageUrl = new URL(storageBaseUrl);
+      } catch (_) {
+        throw new Error("网关返回的上传地址无效");
+      }
+      if (
+        (signedUrl.protocol !== "https:" && signedUrl.protocol !== "http:") ||
+        signedUrl.origin !== storageUrl.origin ||
+        signedUrl.pathname.indexOf("/storage/v1/object/upload/sign/") !== 0
+      ) {
+        throw new Error("网关返回的上传地址无效");
+      }
+      return signedUrl.href;
     }
 
     async function parse(response) {
@@ -91,14 +121,14 @@
     return {
       select: async function(table) {
         var response = await timedRequest(baseUrl + "/rest/v1/" + safeSegment(table) + "?select=*&order=created_at.desc", {
-          headers: headers(),
+          headers: await databaseHeaders(),
         });
         return parse(response);
       },
       insert: async function(table, rows) {
         var response = await timedRequest(baseUrl + "/rest/v1/" + safeSegment(table), {
           method: "POST",
-          headers: headers({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+          headers: await databaseHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }, true),
           body: JSON.stringify(rows),
         });
         return parse(response);
@@ -106,7 +136,7 @@
       update: async function(table, id, values) {
         var response = await timedRequest(baseUrl + "/rest/v1/" + safeSegment(table) + "?id=eq." + encodeURIComponent(id), {
           method: "PATCH",
-          headers: headers({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+          headers: await databaseHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }, true),
           body: JSON.stringify(values),
         });
         return parse(response);
@@ -114,12 +144,35 @@
       remove: async function(table, id) {
         var response = await timedRequest(baseUrl + "/rest/v1/" + safeSegment(table) + "?id=eq." + encodeURIComponent(id), {
           method: "DELETE",
-          headers: headers({ Prefer: "return=minimal" }),
+          headers: await databaseHeaders({ Prefer: "return=minimal" }, true),
         });
         return parse(response);
       },
       upload: async function(bucket, path, file) {
         var encodedPath = path.split("/").map(encodeURIComponent).join("/");
+        if (storageGatewayUrl) {
+          var token = await requiredUserToken();
+          var signResponse = await timedRequest(storageGatewayUrl, {
+            method: "POST",
+            headers: { apikey: key, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "sign-upload", backend: storageBackend, bucket: safeSegment(bucket), path: path }),
+          });
+          var signed = await parse(signResponse);
+          var uploadUrl = signedUploadUrl(signed && signed.signedUrl);
+          var isBlob = typeof Blob !== "undefined" && file instanceof Blob;
+          var uploadOptions = { method: "PUT", headers: { "x-upsert": "false" } };
+          if (isBlob && typeof FormData !== "undefined") {
+            var form = new FormData();
+            form.append("cacheControl", "3600");
+            form.append("", file);
+            uploadOptions.body = form;
+          } else {
+            uploadOptions.headers["Content-Type"] = file.type || "application/octet-stream";
+            uploadOptions.body = file;
+          }
+          var uploadResponse = await timedRequest(uploadUrl, uploadOptions);
+          return parse(uploadResponse);
+        }
         var response = await timedRequest(storageBaseUrl + "/storage/v1/object/" + safeSegment(bucket) + "/" + encodedPath, {
           method: "POST",
           headers: storageHeaders({ "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" }),
@@ -130,6 +183,15 @@
       removeObjects: async function(bucket, paths) {
         var prefixes = Array.from(paths || []).filter(Boolean);
         if (!prefixes.length) return [];
+        if (storageGatewayUrl) {
+          var token = await requiredUserToken();
+          var gatewayResponse = await timedRequest(storageGatewayUrl, {
+            method: "POST",
+            headers: { apikey: key, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", backend: storageBackend, bucket: safeSegment(bucket), paths: prefixes }),
+          });
+          return parse(gatewayResponse);
+        }
         var response = await timedRequest(storageBaseUrl + "/storage/v1/object/" + safeSegment(bucket), {
           method: "DELETE",
           headers: storageHeaders({ "Content-Type": "application/json" }),
