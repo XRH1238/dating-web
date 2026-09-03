@@ -2,7 +2,7 @@
   var api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.AuthClient = api;
-})(typeof window !== "undefined" ? window : globalThis, function() {
+})(typeof window !== "undefined" ? window : null, function() {
   var DEFAULT_STORAGE_KEY = "dating-web:auth:v1";
 
   function defaultStorage() {
@@ -80,7 +80,17 @@
         if (!storage || typeof storage.getItem !== "function") return null;
         var raw = storage.getItem(storageKey);
         if (!raw) return null;
-        var loaded = cleanSession(JSON.parse(raw), null, now());
+        var parsed = JSON.parse(raw);
+        var hasRefreshToken = parsed && typeof parsed.refresh_token === "string" && parsed.refresh_token.length > 0;
+        var hasExpiry = parsed && (
+          (parsed.expires_at != null && isFinite(Number(parsed.expires_at))) ||
+          (parsed.expires_in != null && isFinite(Number(parsed.expires_in)))
+        );
+        if (!hasRefreshToken || !hasExpiry) {
+          clearStorage();
+          return null;
+        }
+        var loaded = cleanSession(parsed, null, now());
         if (!loaded) clearStorage();
         return loaded;
       } catch (_) {
@@ -127,6 +137,14 @@
       return !!(value && value.expires_at != null && value.expires_at <= now() + 60);
     }
 
+    function decodeFragmentPart(value) {
+      try {
+        return decodeURIComponent(String(value).replace(/\+/g, " "));
+      } catch (_) {
+        return null;
+      }
+    }
+
     async function readResponse(response) {
       if (!response || !response.ok) {
         var details = "";
@@ -134,7 +152,9 @@
           try { details = await response.text(); } catch (_) {}
         }
         var status = response && response.status != null ? response.status : "网络";
-        throw new Error("认证请求失败（" + status + "）" + (details ? ": " + details : ""));
+        var error = new Error("认证请求失败（" + status + "）" + (details ? ": " + details : ""));
+        if (response && isFinite(Number(response.status))) error.status = Number(response.status);
+        throw error;
       }
       if (response.status === 204) return null;
       if (typeof response.text === "function") {
@@ -165,6 +185,9 @@
           method: "POST",
           body: JSON.stringify({ refresh_token: oldSession.refresh_token }),
         });
+        if (!response || typeof response.access_token !== "string" || !response.access_token) {
+          throw new Error("认证刷新响应无效");
+        }
         var refreshed = cleanSession(response, oldSession, now());
         if (!refreshed) throw new Error("认证刷新响应无效");
         return setSession(refreshed, "TOKEN_REFRESHED");
@@ -175,6 +198,16 @@
     }
 
     session = loadSession();
+
+    async function getCurrentSession() {
+      if (!session) return null;
+      if (shouldRefresh(session) && session.refresh_token) return refreshSession();
+      if (shouldRefresh(session) && !session.refresh_token) {
+        clearSession("SIGNED_OUT");
+        return null;
+      }
+      return publicSession(session);
+    }
 
     return {
       signInWithPassword: async function(email, password) {
@@ -206,17 +239,7 @@
         return null;
       },
 
-      getSession: async function() {
-        if (!session) return null;
-        if (shouldRefresh(session) && session.refresh_token) {
-          return refreshSession();
-        }
-        if (shouldRefresh(session) && !session.refresh_token) {
-          clearSession("SIGNED_OUT");
-          return null;
-        }
-        return publicSession(session);
-      },
+      getSession: getCurrentSession,
 
       getAccessToken: async function() {
         if (!session) return null;
@@ -244,33 +267,38 @@
       consumeRecoveryRedirect: async function() {
         var hash = location && typeof location.hash === "string" ? location.hash : "";
         if (!hash || hash.charAt(0) !== "#") return null;
-        var params = {};
-        hash.slice(1).split("&").forEach(function(part) {
-          if (!part) return;
-          var pieces = part.split("=");
-          var name = decodeURIComponent(pieces.shift() || "");
-          var value = decodeURIComponent(pieces.join("=") || "");
-          params[name] = value;
-        });
-        if (params.type !== "recovery" || !params.access_token || !params.refresh_token) return null;
-        var recovery = cleanSession({
-          access_token: params.access_token,
-          refresh_token: params.refresh_token,
-          expires_in: params.expires_in,
-          token_type: params.token_type,
-        }, null, now());
-        if (!recovery) return null;
-        setSession(recovery, "PASSWORD_RECOVERY");
-        if (history && typeof history.replaceState === "function") {
-          var cleanUrl = baseUrl + "/";
-          if (location && location.href) cleanUrl = location.href.replace(/#.*/, "");
-          history.replaceState("", "", cleanUrl);
+        var fragment = hash.slice(1);
+        if (!/(?:^|&)type=recovery(?:&|$)/.test(fragment)) return null;
+        try {
+          var params = {};
+          fragment.split("&").forEach(function(part) {
+            if (!part) return;
+            var pieces = part.split("=");
+            var name = decodeFragmentPart(pieces.shift() || "");
+            var value = decodeFragmentPart(pieces.join("=") || "");
+            if (name != null && value != null) params[name] = value;
+          });
+          if (params.type !== "recovery" || !params.access_token || !params.refresh_token) return null;
+          var recovery = cleanSession({
+            access_token: params.access_token,
+            refresh_token: params.refresh_token,
+            expires_in: params.expires_in,
+            token_type: params.token_type,
+          }, null, now());
+          if (!recovery) return null;
+          setSession(recovery, "PASSWORD_RECOVERY");
+          return publicSession(recovery);
+        } finally {
+          if (history && typeof history.replaceState === "function") {
+            var cleanUrl = baseUrl + "/";
+            if (location && location.href) cleanUrl = location.href.replace(/#.*/, "");
+            history.replaceState("", "", cleanUrl);
+          }
         }
-        return publicSession(recovery);
       },
 
       updatePassword: async function(newPassword) {
-        var current = await this.getSession();
+        var current = await getCurrentSession();
         if (!current || !current.access_token) throw new Error("请先登录");
         var response = await authRequest("/auth/v1/user", {
           method: "PUT",
@@ -279,6 +307,9 @@
         });
         if (response && response.user) {
           session.user = copyWithoutPassword(response.user);
+          saveSession(session);
+        } else if (response && response.id) {
+          session.user = copyWithoutPassword(response);
           saveSession(session);
         }
         notify("USER_UPDATED", session);
