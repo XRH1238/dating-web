@@ -46,10 +46,10 @@
       refresh_token: source.refresh_token || (previous && previous.refresh_token) || null,
     };
     if (source.token_type) session.token_type = source.token_type;
-    if (source.expires_at != null && isFinite(Number(source.expires_at))) {
-      session.expires_at = Math.floor(Number(source.expires_at));
-    } else if (source.expires_in != null && isFinite(Number(source.expires_in))) {
-      session.expires_at = now + Math.max(0, Math.floor(Number(source.expires_in)));
+    if (value.expires_at != null && isFinite(Number(value.expires_at))) {
+      session.expires_at = Math.floor(Number(value.expires_at));
+    } else if (value.expires_in != null && isFinite(Number(value.expires_in))) {
+      session.expires_at = now + Math.max(0, Math.floor(Number(value.expires_in)));
     } else if (previous && previous.expires_at != null) {
       session.expires_at = previous.expires_at;
     }
@@ -73,6 +73,7 @@
     var history = options.history || (typeof window !== "undefined" ? window.history : null);
     var listeners = [];
     var session = null;
+    var sessionEpoch = 0;
 
     if (!request) throw new Error("浏览器不支持认证请求");
 
@@ -123,6 +124,7 @@
 
     function setSession(value, event) {
       session = value ? cleanSession(value, session, now()) : null;
+      sessionEpoch += 1;
       if (session) saveSession(session);
       else clearStorage();
       if (event) notify(event, session);
@@ -132,6 +134,7 @@
     function clearSession(event) {
       var hadSession = !!session;
       session = null;
+      sessionEpoch += 1;
       clearStorage();
       if (event && hadSession) notify(event, null);
     }
@@ -183,6 +186,7 @@
     async function refreshSession() {
       if (!session || !session.refresh_token) return publicSession(session);
       var oldSession = session;
+      var refreshEpoch = sessionEpoch;
       try {
         var response = await authRequest("/auth/v1/token?grant_type=refresh_token", {
           method: "POST",
@@ -191,10 +195,12 @@
         if (!response || typeof response.access_token !== "string" || !response.access_token || !hasValidExpiry(response)) {
           throw new Error("认证刷新响应无效");
         }
+        if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
         var refreshed = cleanSession(response, oldSession, now());
         if (!refreshed) throw new Error("认证刷新响应无效");
         return setSession(refreshed, "TOKEN_REFRESHED");
       } catch (error) {
+        if (session !== oldSession || sessionEpoch !== refreshEpoch) return null;
         clearSession("SIGNED_OUT");
         throw error;
       }

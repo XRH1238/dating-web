@@ -100,6 +100,9 @@ test('即将过期的会话通过 refresh_token 刷新并持久化新令牌', as
   assert.deepEqual(calls[0].options.headers, { apikey: 'publishable-key', 'Content-Type': 'application/json' });
   assert.deepEqual(JSON.parse(calls[0].options.body), { refresh_token: 'old-refresh' });
   assert.equal(JSON.parse(storage.value('dating-web:auth:v1')).access_token, 'fresh-user-jwt');
+  assert.equal(JSON.parse(storage.value('dating-web:auth:v1')).expires_at, 1700003600);
+  assert.equal(await client.getAccessToken(), 'fresh-user-jwt');
+  assert.equal(calls.length, 1);
 });
 
 test('刷新失败会清除会话并通知 TOKEN_REFRESHED 失败后的 SIGNED_OUT', async () => {
@@ -431,6 +434,34 @@ test('过期阈值为 now+60 时刷新，而 now+61 时不刷新', async () => {
   });
   assert.equal(await safe.client.getAccessToken(), 'old-61');
   assert.equal(safe.calls.length, 0);
+});
+
+test('并发 signOut 不会被已开始的 refresh 响应复活', async () => {
+  assert.equal(typeof authModule.createAuthClient, 'function');
+  const storage = createStorage({
+    'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires_at: 1700000060 }),
+  });
+  let resolveRefresh;
+  const { client, calls } = createHarness(async (url) => {
+    if (url.includes('grant_type=refresh_token')) {
+      return new Promise((resolve) => { resolveRefresh = () => resolve(jsonResponse({ access_token: 'new', refresh_token: 'new-refresh', expires_at: 1700003600 })); });
+    }
+    return jsonResponse(null, 204);
+  }, { storage, now: () => 1700000000 });
+  const events = [];
+  client.onAuthStateChange((event, value) => events.push([event, value && value.access_token]));
+
+  const refreshPromise = client.getAccessToken();
+  await Promise.resolve();
+  assert.equal(calls.length, 1);
+  assert.equal(typeof resolveRefresh, 'function');
+  await client.signOut();
+  resolveRefresh();
+  await refreshPromise;
+
+  assert.equal(await client.getSession(), null);
+  assert.equal(storage.value('dating-web:auth:v1'), undefined);
+  assert.deepEqual(events, [['SIGNED_OUT', null]]);
 });
 
 test('CommonJS 不污染 globalThis，浏览器 UMD 挂载 window.AuthClient', () => {
