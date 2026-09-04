@@ -109,6 +109,8 @@ let remoteLoadPromise = null;
 let remoteLoadQueued = false;
 let remoteLoadGeneration = -1;
 let pendingSyncPromise = null;
+const formEditRevisions = new WeakMap();
+const trackedForms = new WeakSet();
 let uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
 const mediaViewerCollections = new WeakMap();
 
@@ -322,6 +324,7 @@ async function appendRecordDraftMedia(files) {
   var existingCount = recordExistingPhotos.length + recordDraftFiles.length;
   var selection = window.LivePhotoMedia.selectMedia(files, existingCount, 20);
   recordDraftFiles = recordDraftFiles.concat(selection.items);
+  markFormEdited(recordForm);
   await renderRecordMediaPreview();
   var status = document.querySelector("#record-form-status");
   if (status) status.textContent = mediaSelectionMessage(selection);
@@ -364,6 +367,7 @@ function bindMediaDropzone(name, input, receiveFiles) {
 }
 
 function bindEvents() {
+  [form, todoForm, recordForm, capsuleForm, authLoginForm, passwordRecoveryForm].forEach(trackFormEdits);
   bindMediaViewerTriggers();
   var authLoginButton = document.querySelector("#auth-login-button");
   var authLogoutButton = document.querySelector("#auth-logout-button");
@@ -379,6 +383,7 @@ function bindEvents() {
   });
   if (authLoginForm) authLoginForm.addEventListener("submit", async function(event) {
     event.preventDefault();
+    var saveContext = captureFormSave(authLoginForm, 1);
     var status = document.querySelector("#auth-login-status");
     var submit = authLoginForm.querySelector('[type="submit"]');
     var fd = new FormData(authLoginForm);
@@ -387,6 +392,7 @@ function bindEvents() {
     status.textContent = "正在登录...";
     try {
       await state.authClient.signInWithPassword(String(fd.get("email") || "").trim(), String(fd.get("password") || ""));
+      if (!isCurrentFormSave(saveContext)) return;
       authLoginForm.reset();
       status.textContent = "";
       closeDialog(authDialog);
@@ -414,6 +420,7 @@ function bindEvents() {
   });
   if (passwordRecoveryForm) passwordRecoveryForm.addEventListener("submit", async function(event) {
     event.preventDefault();
+    var saveContext = captureFormSave(passwordRecoveryForm, 1);
     var status = document.querySelector("#password-recovery-status");
     var submit = passwordRecoveryForm.querySelector('[type="submit"]');
     var fd = new FormData(passwordRecoveryForm);
@@ -423,6 +430,7 @@ function bindEvents() {
     status.textContent = "正在保存新密码...";
     try {
       await state.authClient.updatePassword(password);
+      if (!isCurrentFormSave(saveContext)) return;
       passwordRecoveryForm.reset();
       status.textContent = "";
       closeDialog(passwordRecoveryDialog);
@@ -464,7 +472,7 @@ function bindEvents() {
       form.reset();
       resetPlanDatePicker();
       closePanel();
-    });
+    }, form);
   });
   if (todoForm) {
     todoForm.addEventListener("submit", async function(e) {
@@ -472,7 +480,7 @@ function bindEvents() {
       if (!requireAuthenticated()) return;
       var input = todoForm.querySelector("input");
       if (!input || !input.value.trim()) return;
-      await afterSuccessfulSave(saveTodo(input.value.trim()), function() { input.value = ""; });
+      await afterSuccessfulSave(saveTodo(input.value.trim()), function() { input.value = ""; }, todoForm);
     });
   }
   document.querySelectorAll("[data-todo-filter]").forEach(function(button) {
@@ -533,6 +541,7 @@ function bindEvents() {
     if (!requireAuthenticated(null, true)) return;
     if (!hadDraftMedia && nextDraftMedia.length) capsuleExistingPhotos = [];
     capsuleDraftFiles = nextDraftMedia;
+    markFormEdited(capsuleForm);
   });
   if (recordForm) {
     recordForm.addEventListener("submit", submitRecordForm);
@@ -973,10 +982,39 @@ function setCloudStatus(status) {
   if (status === "connected") cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 4000);
 }
 
-async function afterSuccessfulSave(saveOperation, onSuccess) {
-  if (!(await saveOperation)) return false;
+function markFormEdited(target) {
+  if (target) formEditRevisions.set(target, (formEditRevisions.get(target) || 0) + 1);
+}
+
+function trackFormEdits(target) {
+  if (!target || trackedForms.has(target)) return;
+  trackedForms.add(target);
+  ["input", "change", "reset", "click", "drop"].forEach(function(type) {
+    target.addEventListener(type, function() { markFormEdited(target); });
+  });
+}
+
+function captureFormSave(target, expectedAuthMutations) {
+  markFormEdited(target);
+  return { form: target, revision: target ? formEditRevisions.get(target) : 0,
+    authGeneration: authMutationGeneration + (expectedAuthMutations || 0) };
+}
+
+function isCurrentFormSave(context) {
+  return context.authGeneration === authMutationGeneration &&
+    (!context.form || context.revision === formEditRevisions.get(context.form));
+}
+
+function completeFormSave(context, onSuccess) {
+  if (!isCurrentFormSave(context)) return false;
   onSuccess();
   return true;
+}
+
+async function afterSuccessfulSave(saveOperation, onSuccess, target) {
+  var saveContext = captureFormSave(target);
+  if (!(await saveOperation)) return false;
+  return completeFormSave(saveContext, onSuccess);
 }
 
 async function loadRemoteData() {
@@ -1239,6 +1277,7 @@ function removeExistingRecordMedia(index) {
   if (!requireAuthenticated()) return;
   if (index < 0 || index >= recordExistingPhotos.length) return;
   recordRemovedPhotos.push(recordExistingPhotos.splice(index, 1)[0]);
+  markFormEdited(recordForm);
   renderRecordMediaPreview();
 }
 
@@ -1246,6 +1285,7 @@ function removeNewRecordMedia(index) {
   if (!requireAuthenticated()) return;
   if (index < 0 || index >= recordDraftFiles.length) return;
   recordDraftFiles.splice(index, 1);
+  markFormEdited(recordForm);
   renderRecordMediaPreview();
   saveRecordDraft();
 }
@@ -1302,7 +1342,7 @@ async function localStoryPhotoRefs(items) {
   return Promise.all(items.map(localMediaRef));
 }
 
-function persistPendingRecord(entry, status) {
+function persistPendingRecord(entry, status, saveContext) {
   if (!requireAuthenticated()) return false;
   var pending = window.RecordRecovery.createPendingRecord(entry, createLocalRecordId());
   state.records.unshift(pending);
@@ -1312,8 +1352,10 @@ function persistPendingRecord(entry, status) {
     status.textContent = "本机空间不足，记录尚未保存。请先复制文字并减少照片后重试。";
     return false;
   }
-  clearRecordEditor();
-  closePanelById(recordPanel);
+  if (!saveContext || isCurrentFormSave(saveContext)) {
+    clearRecordEditor();
+    closePanelById(recordPanel);
+  }
   setCloudStatus("offline");
   return true;
 }
@@ -1574,20 +1616,25 @@ async function renderFilePreview(files, selector) {
 async function submitRecordForm(event) {
   event.preventDefault();
   if (!requireAuthenticated()) return;
+  var saveContext = captureFormSave(recordForm);
+  var submittedRecordId = editingRecordId;
+  var submittedExistingPhotos = recordExistingPhotos.slice();
+  var submittedRemovedPhotos = recordRemovedPhotos.slice();
+  var submittedDraftFiles = recordDraftFiles.slice();
   var status = document.querySelector("#record-form-status");
   var date = validateRecordDateRange();
   if (!date) return;
   var fd = new FormData(recordForm);
   var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
     description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: [] };
-  if (recordExistingPhotos.length + recordDraftFiles.length > 20) {
+  if (submittedExistingPhotos.length + submittedDraftFiles.length > 20) {
     status.textContent = "每条记录最多保留 20 个媒体项目，请先移除一些照片或视频。";
     return;
   }
   if (recordSubmitButton) recordSubmitButton.disabled = true;
   var uploadedPhotos = null;
   var inserted = false;
-  if (editingRecordId !== null) {
+  if (submittedRecordId !== null) {
     if (!state.backendReady || !state.client) {
       status.textContent = "修改需要连接云端，表单内容仍保留，请检查网络后重试。";
       if (recordSubmitButton) recordSubmitButton.disabled = false;
@@ -1595,9 +1642,9 @@ async function submitRecordForm(event) {
     }
     try {
       status.textContent = "正在保存修改...";
-      uploadedPhotos = await uploadStoryFiles(recordDraftFiles, "records");
-      entry.photos = recordExistingPhotos.concat(uploadedPhotos);
-      await state.client.update(tables.records, editingRecordId, entry);
+      uploadedPhotos = await uploadStoryFiles(submittedDraftFiles, "records");
+      entry.photos = submittedExistingPhotos.concat(uploadedPhotos);
+      await state.client.update(tables.records, submittedRecordId, entry);
     } catch (error) {
       var partiallyUploaded = uploadedPhotos || error.uploadedMedia || [];
       if (partiallyUploaded.length) await cleanupUploadedRecordMedia(partiallyUploaded);
@@ -1608,16 +1655,18 @@ async function submitRecordForm(event) {
       return;
     }
     var removalWarning = false;
-    try { await removeRecordMedia(recordRemovedPhotos); }
+    try { await removeRecordMedia(submittedRemovedPhotos); }
     catch (_) { removalWarning = true; }
     try { await fetchRecords(); }
     catch (_) {
-      var localRecord = state.records.find(function(item) { return String(item.id) === String(editingRecordId); });
+      var localRecord = state.records.find(function(item) { return String(item.id) === String(submittedRecordId); });
       if (localRecord) Object.assign(localRecord, entry);
     }
-    clearRecordEditor(true);
-    restoreRecordDraft();
-    closePanelById(recordPanel);
+    completeFormSave(saveContext, function() {
+      clearRecordEditor(true);
+      restoreRecordDraft();
+      closePanelById(recordPanel);
+    });
     renderAll();
     showCloudNotice(removalWarning ? "修改已保存，但有部分旧文件暂未清理。" : "出游记录已更新。", removalWarning);
     if (recordSubmitButton) recordSubmitButton.disabled = false;
@@ -1627,20 +1676,22 @@ async function submitRecordForm(event) {
   try {
     status.textContent = "正在保存这段故事...";
     if (state.backendReady) {
-      uploadedPhotos = await uploadStoryFiles(recordDraftFiles, "records");
+      uploadedPhotos = await uploadStoryFiles(submittedDraftFiles, "records");
       entry.photos = uploadedPhotos;
       await state.client.insert(tables.records, [entry]);
       inserted = true;
       await fetchRecords();
-      clearRecordEditor();
-      status.textContent = "";
-      closePanelById(recordPanel);
+      completeFormSave(saveContext, function() {
+        clearRecordEditor();
+        status.textContent = "";
+        closePanelById(recordPanel);
+      });
       renderAll();
       if (recordSubmitButton) recordSubmitButton.disabled = false;
       return;
     }
-    entry.photos = await localStoryPhotoRefs(recordDraftFiles);
-    persistPendingRecord(entry, status);
+    entry.photos = await localStoryPhotoRefs(submittedDraftFiles);
+    persistPendingRecord(entry, status, saveContext);
   } catch (error) {
     state.backendReady = false; setCloudStatus("offline");
     if (!state.authUser) {
@@ -1651,14 +1702,16 @@ async function submitRecordForm(event) {
     if (inserted) {
       state.records.unshift(entry);
       renderAll();
-      clearRecordEditor();
-      closePanelById(recordPanel);
+      completeFormSave(saveContext, function() {
+        clearRecordEditor();
+        closePanelById(recordPanel);
+      });
       if (recordSubmitButton) recordSubmitButton.disabled = false;
       return;
     }
     try {
-      entry.photos = uploadedPhotos || await localStoryPhotoRefs(recordDraftFiles);
-      if (persistPendingRecord(entry, status)) return;
+      entry.photos = uploadedPhotos || await localStoryPhotoRefs(submittedDraftFiles);
+      if (persistPendingRecord(entry, status, saveContext)) return;
     } catch (_) {}
     status.textContent = "保存没有成功，草稿仍保存在本机。请复制文字并检查网络后重试。";
   } finally {
@@ -1681,10 +1734,11 @@ async function deleteRecord(index) {
 // ========== Time capsules ==========
 async function fetchCapsules() { state.capsules = await state.client.select(tables.capsules); }
 
-async function saveCapsule(entry, index) {
+async function saveCapsule(entry, index, submittedId) {
   if (!requireAuthenticated()) return false;
   if (state.backendReady) {
-    if (index >= 0 && state.capsules[index] && state.capsules[index].id) await state.client.update(tables.capsules, state.capsules[index].id, entry);
+    var targetId = arguments.length >= 3 ? submittedId : (index >= 0 && state.capsules[index] && state.capsules[index].id);
+    if (targetId) await state.client.update(tables.capsules, targetId, entry);
     else await state.client.insert(tables.capsules, [entry]);
     await fetchCapsules();
   } else if (index >= 0) state.capsules[index] = Object.assign({}, state.capsules[index], entry);
@@ -1695,16 +1749,23 @@ async function saveCapsule(entry, index) {
 async function submitCapsuleForm(event) {
   event.preventDefault();
   if (!requireAuthenticated()) return;
+  var saveContext = captureFormSave(capsuleForm);
+  var submittedCapsuleIndex = editingCapsuleIndex;
+  var submittedCapsule = submittedCapsuleIndex >= 0 ? state.capsules[submittedCapsuleIndex] : null;
+  var submittedCapsuleId = submittedCapsule && submittedCapsule.id;
+  var submittedDraftFiles = capsuleDraftFiles.slice();
+  var submittedExistingPhotos = capsuleExistingPhotos.slice();
   var status = document.querySelector("#capsule-form-status");
   var fd = new FormData(capsuleForm);
   try {
     status.textContent = "正在封存...";
-    var newPhotos = capsuleDraftFiles.length ? await uploadStoryFiles(capsuleDraftFiles, "capsules") : capsuleExistingPhotos;
-    var current = editingCapsuleIndex >= 0 ? state.capsules[editingCapsuleIndex] : null;
+    var newPhotos = submittedDraftFiles.length ? await uploadStoryFiles(submittedDraftFiles, "capsules") : submittedExistingPhotos;
+    var current = submittedCapsule;
     var now = new Date().toISOString();
     var entry = { title: fd.get("title").trim(), body: fd.get("body").trim(), unlock_date: fd.get("unlock_date"),
       photos: newPhotos, created_at: current ? current.created_at : now, updated_at: now };
-    if (!(await saveCapsule(entry, editingCapsuleIndex))) return;
+    if (!(await saveCapsule(entry, submittedCapsuleIndex, submittedCapsuleId))) return;
+    if (!isCurrentFormSave(saveContext)) return;
     capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; editingCapsuleIndex = -1;
     document.querySelector("#capsule-photo-preview").innerHTML = "";
     status.textContent = ""; closePanelById(capsulePanel); renderAll();

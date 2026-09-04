@@ -20,6 +20,7 @@ function createScriptHarness(overrides = {}) {
     '#quick-panel': panelStub(),
     '#record-panel': panelStub(),
     '#capsule-panel': panelStub(),
+    ...(overrides.elements || {}),
   };
   const document = {
     body,
@@ -35,7 +36,7 @@ function createScriptHarness(overrides = {}) {
     clearTimeout,
     requestAnimationFrame() { return 1; },
     cancelAnimationFrame() {},
-    FormData,
+    FormData: overrides.FormData || FormData,
     Blob,
     URL,
     fetch: overrides.fetch || (async () => { throw new Error('unexpected fetch'); }),
@@ -54,7 +55,24 @@ function createScriptHarness(overrides = {}) {
     syncPendingRecords: syncPendingRecords,
     uploadPhotos: uploadPhotos,
     handleAuthStateChange: handleAuthStateChange,
-    afterSuccessfulSave: typeof afterSuccessfulSave === 'function' ? afterSuccessfulSave : undefined
+    afterSuccessfulSave: typeof afterSuccessfulSave === 'function' ? afterSuccessfulSave : undefined,
+    trackFormEdits: typeof trackFormEdits === 'function' ? trackFormEdits : undefined,
+    submitRecordForm: submitRecordForm,
+    submitCapsuleForm: submitCapsuleForm,
+    setEditorState: function(next) {
+      if ('recordId' in next) editingRecordId = next.recordId;
+      if ('recordExisting' in next) recordExistingPhotos = next.recordExisting;
+      if ('recordRemoved' in next) recordRemovedPhotos = next.recordRemoved;
+      if ('recordDraft' in next) recordDraftFiles = next.recordDraft;
+      if ('capsuleIndex' in next) editingCapsuleIndex = next.capsuleIndex;
+      if ('capsuleExisting' in next) capsuleExistingPhotos = next.capsuleExisting;
+      if ('capsuleDraft' in next) capsuleDraftFiles = next.capsuleDraft;
+    },
+    setSubmitDependencies: function(next) {
+      validateRecordDateRange = function() { return '2026-09-04'; };
+      uploadStoryFiles = next.upload;
+      removeRecordMedia = next.remove || function() {};
+    }
   };`, context);
   return { context, hooks: context.__authUiHooks, body };
 }
@@ -405,6 +423,86 @@ test('保存失败不执行表单清理，成功后只清理一次', async () =>
   assert.equal(cleanupCount, 1);
   assert.match(script, /afterSuccessfulSave\(savePlan\(entry\)/);
   assert.match(script, /afterSuccessfulSave\(saveTodo\(input\.value\.trim\(\)\)/);
+});
+
+test('旧保存成功跨越退出和新登录后不会清空新草稿', async () => {
+  const harness = createScriptHarness();
+  harness.hooks.setState({ authUser: { id: 'old-user' } });
+  let finishSave;
+  let cleanupCount = 0;
+  const saving = harness.hooks.afterSuccessfulSave(new Promise(resolve => { finishSave = resolve; }), () => { cleanupCount += 1; });
+  await harness.hooks.handleAuthStateChange('SIGNED_OUT', null);
+  await harness.hooks.handleAuthStateChange('TOKEN_REFRESHED', { user: { id: 'new-user' } });
+  finishSave(true);
+  assert.equal(await saving, false);
+  assert.equal(cleanupCount, 0);
+});
+
+test('同一认证期间编辑表单后旧保存成功也不能清理新输入', async () => {
+  const harness = createScriptHarness();
+  const listeners = {};
+  const form = { addEventListener(type, callback) { listeners[type] = callback; } };
+  harness.hooks.trackFormEdits(form);
+  let finishSave;
+  let cleanupCount = 0;
+  const saving = harness.hooks.afterSuccessfulSave(new Promise(resolve => { finishSave = resolve; }), () => { cleanupCount += 1; }, form);
+  listeners.input();
+  finishSave(true);
+  assert.equal(await saving, false);
+  assert.equal(cleanupCount, 0);
+  assert.match(script, /submitRecordForm[\s\S]*?captureFormSave\(recordForm\)/);
+  assert.match(script, /submitCapsuleForm[\s\S]*?captureFormSave\(capsuleForm\)/);
+});
+
+test('Record 上传等待期间切换编辑器仍只更新并清理原提交目标', async () => {
+  let releaseUpload;
+  const updates = [];
+  const removed = [];
+  let resets = 0;
+  const listeners = {};
+  const recordForm = { reset() { resets += 1; }, addEventListener(type, callback) { listeners[type] = callback; } };
+  const harness = createScriptHarness({
+    elements: { '#record-form': recordForm, '#record-form-status': { textContent: '' } },
+    FormData: class { get(name) { return name; } getAll() { return []; } },
+    window: { RecordRecovery: { mergeRemoteRecords(remote) { return remote; } } },
+  });
+  harness.hooks.trackFormEdits(recordForm);
+  harness.hooks.setState({ authUser: { id: 'user' }, backendReady: true,
+    client: { async update(_table, id, entry) { updates.push({ id, photos: entry.photos }); }, async select() { return []; } } });
+  harness.hooks.setEditorState({ recordId: 'original', recordExisting: [{ url: 'old-kept' }], recordRemoved: [{ url: 'old-removed' }], recordDraft: ['old-file'] });
+  harness.hooks.setSubmitDependencies({ upload: () => new Promise(resolve => { releaseUpload = resolve; }), remove: async refs => { removed.push(...refs); } });
+  const saving = harness.hooks.submitRecordForm({ preventDefault() {} });
+  harness.hooks.setEditorState({ recordId: 'new-editor', recordExisting: [{ url: 'new-kept' }], recordRemoved: [{ url: 'new-removed' }], recordDraft: ['new-file'] });
+  listeners.input();
+  releaseUpload([{ url: 'uploaded-old' }]);
+  await saving;
+  assert.equal(updates[0].id, 'original');
+  assert.equal(updates[0].photos[0].url, 'old-kept');
+  assert.equal(removed[0].url, 'old-removed');
+  assert.equal(resets, 0);
+});
+
+test('Capsule 已发送保存成功跨认证切换后不清空或关闭新表单', async () => {
+  let releaseUpdate;
+  let updatedId;
+  let resets = 0;
+  const capsuleForm = { reset() { resets += 1; }, addEventListener() {} };
+  const harness = createScriptHarness({
+    elements: { '#capsule-form': capsuleForm, '#capsule-form-status': { textContent: '' } },
+    FormData: class { get(name) { return name; } },
+  });
+  harness.hooks.setState({ authUser: { id: 'old-user' }, backendReady: true,
+    capsules: [{ id: 'original', created_at: 'old-date' }, { id: 'new-editor' }],
+    client: { update(_table, id) { updatedId = id; return new Promise(resolve => { releaseUpdate = resolve; }); }, async select() { return []; } } });
+  harness.hooks.setEditorState({ capsuleIndex: 0, capsuleExisting: [{ url: 'old-photo' }], capsuleDraft: [] });
+  const saving = harness.hooks.submitCapsuleForm({ preventDefault() {} });
+  await harness.hooks.handleAuthStateChange('SIGNED_OUT', null);
+  await harness.hooks.handleAuthStateChange('TOKEN_REFRESHED', { user: { id: 'new-user' } });
+  harness.hooks.setEditorState({ capsuleIndex: 1, capsuleExisting: [{ url: 'new-photo' }] });
+  releaseUpdate();
+  await saving;
+  assert.equal(updatedId, 'original');
+  assert.equal(resets, 0);
 });
 
 test('核心页面资源使用一致的新缓存版本', () => {

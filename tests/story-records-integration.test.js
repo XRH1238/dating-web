@@ -117,9 +117,11 @@ test('编辑记录按 ID 更新并在成功后删除被移除的旧照片', () =
   const submitStart = script.indexOf('async function submitRecordForm');
   const deleteStart = script.indexOf('async function deleteRecord', submitStart);
   const submit = script.slice(submitStart, deleteStart);
-  assert.match(submit, /state\.client\.update\(tables\.records,\s*editingRecordId/);
-  assert.match(submit, /await removeRecordMedia\(recordRemovedPhotos\)/);
-  assert.ok(submit.indexOf('state.client.update') < submit.indexOf('removeRecordMedia(recordRemovedPhotos)'), '必须先更新记录再删除旧媒体');
+  assert.match(submit, /submittedRecordId = editingRecordId/);
+  assert.match(submit, /submittedRemovedPhotos = recordRemovedPhotos\.slice\(\)/);
+  assert.match(submit, /state\.client\.update\(tables\.records,\s*submittedRecordId/);
+  assert.match(submit, /await removeRecordMedia\(submittedRemovedPhotos\)/);
+  assert.ok(submit.indexOf('state.client.update') < submit.indexOf('removeRecordMedia(submittedRemovedPhotos)'), '必须先更新记录再删除旧媒体');
   assert.match(script, /cleanupUploadedRecordMedia/);
 });
 

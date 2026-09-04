@@ -29,8 +29,9 @@ test('三个上传入口共用普通图片压缩且实况照片保持原文件',
   assert.match(script, /item\.kind\s*!==\s*["']image["'][\s\S]*?return original/);
   assert.match(script, /async function uploadMediaItem/);
   assert.match(script, /async function uploadPhotos/);
-  assert.match(script, /uploadStoryFiles\(recordDraftFiles/);
-  assert.match(script, /uploadStoryFiles\(capsuleDraftFiles/);
+  assert.match(script, /submittedDraftFiles = recordDraftFiles\.slice\(\)/);
+  assert.match(script, /submittedDraftFiles = capsuleDraftFiles\.slice\(\)/);
+  assert.match(script, /uploadStoryFiles\(submittedDraftFiles/);
 });
 
 test('拖拽绑定、媒体渲染和高亮样式存在', () => {
@@ -69,8 +70,8 @@ test('Gallery、Record、Capsule、Live Photo 与待同步记录继续走统一�
   assert.match(script, /async function removeRecordMedia[\s\S]*?state\.client\.removeObjects\(storageBucket, paths\)/);
   assert.match(script, /async function syncPendingRecords\(\)[\s\S]*?uploadPendingRecordPhotos\(/);
   assert.match(script, /async function uploadPhotos\(items\)[\s\S]*?uploadMediaItem\(item, folder, i\)/);
-  assert.match(script, /submitRecordForm[\s\S]*?uploadStoryFiles\(recordDraftFiles, ["']records["']\)/);
-  assert.match(script, /submitCapsuleForm[\s\S]*?uploadStoryFiles\(capsuleDraftFiles, ["']capsules["']\)/);
+  assert.match(script, /submitRecordForm[\s\S]*?uploadStoryFiles\(submittedDraftFiles, ["']records["']\)/);
+  assert.match(script, /submitCapsuleForm[\s\S]*?uploadStoryFiles\(submittedDraftFiles, ["']capsules["']\)/);
   assert.match(script, /function syncPendingRecords\([^]*?if\s*\(!requireAuthenticated\([^)]*\)\)\s*return/);
 });
 
