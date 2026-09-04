@@ -39,18 +39,13 @@ function readSql() {
   return fs.readFileSync(sqlPath, 'utf8');
 }
 
-test('all application tables enable row level security', () => {
-  const parsed = statements(readSql());
-  for (const table of tables) {
-    assert.ok(
-      parsed.includes(`alter table public.${table} enable row level security`),
-      `${table} must enable RLS`,
-    );
-  }
-});
-
-test('each table is public read and authenticated write only', () => {
-  const policies = statements(readSql()).map(parseCreatePolicy).filter(Boolean);
+function validateApplicationPolicies(sql) {
+  const createStatements = statements(sql).filter(statement => /^create\s+policy\b/i.test(statement));
+  const policies = createStatements.map(statement => {
+    const policy = parseCreatePolicy(statement);
+    assert.ok(policy, `unexpected or unsafe CREATE POLICY statement: ${statement}`);
+    return policy;
+  });
   assert.equal(policies.length, tables.length * operations.length);
 
   for (const table of tables) {
@@ -80,6 +75,25 @@ test('each table is public read and authenticated write only', () => {
       }
     }
   }
+}
+
+test('all application tables enable row level security', () => {
+  const parsed = statements(readSql());
+  for (const table of tables) {
+    assert.ok(
+      parsed.includes(`alter table public.${table} enable row level security`),
+      `${table} must enable RLS`,
+    );
+  }
+});
+
+test('each table is public read and authenticated write only', () => {
+  validateApplicationPolicies(readSql());
+});
+
+test('an extra anonymous all-operations policy is rejected', () => {
+  const malicious = `${readSql()}\ncreate policy "evil public writes" on public.love_plans for all to anon using (true) with check (true);`;
+  assert.throws(() => validateApplicationPolicies(malicious));
 });
 
 test('all repository legacy anonymous policies are explicitly removed', () => {
