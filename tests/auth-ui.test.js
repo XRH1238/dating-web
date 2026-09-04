@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -10,6 +11,43 @@ const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 
 function functionStartsWithGuard(name) {
   return new RegExp(`(?:async\\s+)?function\\s+${name}\\([^)]*\\)\\s*\\{\\s*(?:event\\.preventDefault\\(\\);\\s*)?if\\s*\\(!requireAuthenticated\\(`);
+}
+
+function createScriptHarness(overrides = {}) {
+  const body = { dataset: {} };
+  const document = {
+    body,
+    addEventListener() {},
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  };
+  const context = {
+    console,
+    document,
+    location: { href: 'https://example.com/' },
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame() { return 1; },
+    cancelAnimationFrame() {},
+    FormData,
+    Blob,
+    URL,
+    fetch: overrides.fetch || (async () => { throw new Error('unexpected fetch'); }),
+  };
+  context.window = context;
+  context.window.addEventListener = function() {};
+  context.window.confirm = function() { return true; };
+  context.window.localStorage = null;
+  Object.assign(context.window, overrides.window || {});
+  vm.createContext(context);
+  vm.runInContext(script + `\n;globalThis.__authUiHooks = {
+    setState: function(next) { Object.assign(state, next); },
+    getState: function() { return state; },
+    syncPendingRecords: syncPendingRecords,
+    uploadPhotos: uploadPhotos,
+    handleAuthStateChange: handleAuthStateChange
+  };`, context);
+  return { context, hooks: context.__authUiHooks, body };
 }
 
 test('页面先加载 Auth 客户端并提供无注册入口的登录与恢复对话框', () => {
@@ -58,7 +96,7 @@ test('认证状态控制只读模式并在退出或失效时关闭写面板', ()
   assert.match(script, /document\.body\.dataset\.authenticated\s*=\s*state\.authUser\s*\?\s*"true"\s*:\s*"false"/);
   assert.match(script, /function closeWritePanels\([\s\S]*?closePanel\(\)[\s\S]*?closePanelById\(recordPanel\)[\s\S]*?closePanelById\(capsulePanel\)/);
   assert.match(script, /if\s*\(!state\.authUser\)\s*\{[\s\S]*?closeWritePanels\(\)/);
-  assert.match(script, /await loadRemoteData\(\);[\s\S]*?await syncPendingRecords\(\);/);
+  assert.match(script, /becameAuthenticated\s*&&\s*event\s*!==\s*"TOKEN_REFRESHED"[\s\S]*?await loadRemoteData\(\);/);
 });
 
 test('所有数据库与媒体写入底层函数都先检查登录状态', () => {
@@ -96,4 +134,118 @@ test('等待删除确认期间若会话失效则不会继续删除', () => {
     assert.match(body, /confirmAction\(/);
     assert.equal((body.match(/requireAuthenticated\(\)/g) || []).length, 2, `${name} 应在确认前后检查登录`);
   });
+});
+
+test('pending Live Photo 每个资源上传成功后立即持久化 checkpoint', async () => {
+  const snapshots = [];
+  let uploadCount = 0;
+  const uploadedPaths = [];
+  const pending = {
+    local_id: 'local-live', pending_sync: true, title: '海边',
+    photos: [{ kind: 'live-photo', name: 'a.jpg', type: 'image/jpeg', url: 'data:image/jpeg;base64,AA', motion_name: 'a.mov', motion_type: 'video/quicktime', motion_url: 'data:video/quicktime;base64,BB' }],
+  };
+  const harness = createScriptHarness({
+    fetch: async () => ({ blob: async () => new Blob(['x'], { type: uploadCount ? 'video/quicktime' : 'image/jpeg' }) }),
+    window: {
+      RecordRecovery: {
+        toCloudRecord(record) { const next = { ...record, photos: record.photos.map(photo => ({ ...photo })) }; delete next.local_id; delete next.pending_sync; return next; },
+        mergeRemoteRecords(remote) { return remote; },
+      },
+    },
+  });
+  harness.hooks.setState({
+    authUser: { id: 'user-1' }, backendReady: true, records: [pending],
+    snapshotStore: { save(value) { snapshots.push(JSON.parse(JSON.stringify(value))); return true; } },
+    client: {
+      async upload(_bucket, path) { uploadedPaths.push(path); uploadCount += 1; if (uploadCount === 2) throw new Error('MOV failed'); },
+      getPublicUrl(_bucket, path) { return 'https://storage.example/' + path; },
+      async insert() {},
+      async select() { return []; },
+    },
+  });
+
+  await assert.rejects(harness.hooks.syncPendingRecords(), /MOV failed/);
+  assert.equal(pending.photos[0].url.startsWith('https://storage.example/records/'), true);
+  assert.equal(pending.photos[0].motion_url.startsWith('data:'), true);
+  assert.equal(snapshots.some(snapshot => snapshot.records[0].photos[0].url.startsWith('https://storage.example/records/')), true);
+
+  await harness.hooks.syncPendingRecords();
+  assert.equal(uploadedPaths.filter(path => path.endsWith('a.jpg')).length, 1, '重试不应再次上传已 checkpoint 的静态图');
+  assert.equal(uploadedPaths.filter(path => path.endsWith('a.mov')).length, 2, '重试只应补传失败的 MOV');
+});
+
+test('pending 媒体全部上传后即使数据库插入失败也不会丢失新 URL', async () => {
+  const snapshots = [];
+  const pending = {
+    local_id: 'local-image', pending_sync: true, title: '日落',
+    photos: [{ kind: 'image', name: 'sun.jpg', type: 'image/jpeg', url: 'data:image/jpeg;base64,AA' }],
+  };
+  const harness = createScriptHarness({
+    fetch: async () => ({ blob: async () => new Blob(['x'], { type: 'image/jpeg' }) }),
+    window: { RecordRecovery: { toCloudRecord(record) { const next = { ...record, photos: record.photos.map(photo => ({ ...photo })) }; delete next.local_id; delete next.pending_sync; return next; } } },
+  });
+  harness.hooks.setState({
+    authUser: { id: 'user-1' }, backendReady: true, records: [pending],
+    snapshotStore: { save(value) { snapshots.push(JSON.parse(JSON.stringify(value))); return true; } },
+    client: {
+      async upload() {},
+      getPublicUrl(_bucket, path) { return 'https://storage.example/' + path; },
+      async insert() { throw new Error('database failed'); },
+    },
+  });
+
+  await assert.rejects(harness.hooks.syncPendingRecords(), /database failed/);
+  assert.equal(pending.photos[0].url.startsWith('https://storage.example/records/'), true);
+  assert.equal(snapshots.at(-1).records[0].photos[0].url, pending.photos[0].url);
+});
+
+test('Gallery 本地媒体转换期间退出登录不会写入本地相册', async () => {
+  let finishRead;
+  class DeferredFileReader {
+    readAsDataURL() { finishRead = () => { this.result = 'data:image/jpeg;base64,AA'; this.onload(); }; }
+  }
+  const harness = createScriptHarness({ window: { FileReader: DeferredFileReader } });
+  harness.context.FileReader = DeferredFileReader;
+  const photos = [];
+  harness.hooks.setState({ authUser: { id: 'user-1' }, backendReady: false, photos, snapshotStore: { save() { return true; } } });
+  const pendingUpload = harness.hooks.uploadPhotos([{ kind: 'image', file: { name: 'a.jpg', type: 'image/jpeg' } }]);
+  await new Promise(resolve => setImmediate(resolve));
+  harness.hooks.setState({ authUser: null });
+  finishRead();
+
+  assert.equal(await pendingUpload, false);
+  assert.deepEqual(photos, []);
+});
+
+test('密码恢复 USER_UPDATED 只触发一次远端刷新且 TOKEN_REFRESHED 留给启动流程', async () => {
+  let clientCreations = 0;
+  let selects = 0;
+  let inserts = 0;
+  const pending = { local_id: 'local-recovery', pending_sync: true, title: '待同步', photos: [] };
+  const harness = createScriptHarness({
+    window: {
+      CloudDataClient: {
+        createCloudDataClient() {
+          clientCreations += 1;
+          return {
+            async select() { selects += 1; return []; },
+            async insert() { inserts += 1; },
+          };
+        },
+      },
+      RecordRecovery: {
+        toCloudRecord(record) { const next = { ...record }; delete next.local_id; delete next.pending_sync; return next; },
+        mergeRemoteRecords(remote, local) { return (local || []).filter(record => record.pending_sync).concat(remote); },
+      },
+      MediaUpload: { isVideo() { return false; } },
+    },
+  });
+  harness.hooks.setState({ authUser: null, records: [pending], snapshotStore: { save() { return true; } } });
+  await harness.hooks.handleAuthStateChange('TOKEN_REFRESHED', { user: { id: 'user-1', email: 'a@example.com' } });
+  assert.equal(clientCreations, 0);
+  harness.hooks.setState({ authUser: null });
+  await harness.hooks.handleAuthStateChange('USER_UPDATED', { user: { id: 'user-1', email: 'a@example.com' } });
+  assert.equal(clientCreations, 1);
+  assert.equal(selects, 6, '一次完整远端刷新加上 pending 写入后的 records 回读，不应重复执行');
+  assert.equal(inserts, 1, '恢复完成后应同步登录前已有的 pending record');
 });

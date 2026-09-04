@@ -218,6 +218,7 @@ async function restoreAuth() {
 async function handleAuthStateChange(event, session) {
   var hadUser = !!state.authUser;
   state.authUser = session && session.user ? session.user : null;
+  var becameAuthenticated = !hadUser && !!state.authUser;
   updateAuthUi();
   renderAll();
   if (event === "PASSWORD_RECOVERY") {
@@ -229,10 +230,9 @@ async function handleAuthStateChange(event, session) {
     if (hadUser) showCloudNotice("登录已失效，请重新登录后继续编辑。", true);
     return;
   }
-  if (event === "SIGNED_IN") {
+  if (becameAuthenticated && event !== "TOKEN_REFRESHED") {
     connectSupabase();
     await loadRemoteData();
-    await syncPendingRecords();
   }
 }
 
@@ -520,6 +520,7 @@ function bindEvents() {
   bindMediaDropzone("capsule", capsulePhotoInput, async function(files) {
     var hadDraftMedia = capsuleDraftFiles.length > 0;
     var nextDraftMedia = await appendDraftMedia(files, capsuleDraftFiles, "#capsule-photo-preview", "#capsule-form-status");
+    if (!requireAuthenticated(null, true)) return;
     if (!hadDraftMedia && nextDraftMedia.length) capsuleExistingPhotos = [];
     capsuleDraftFiles = nextDraftMedia;
   });
@@ -1282,11 +1283,16 @@ function persistPendingRecord(entry, status) {
   return true;
 }
 
-async function uploadPendingRecordPhotos(photos, localId) {
+async function uploadPendingRecordPhotos(photos, localId, onCheckpoint) {
   if (!requireAuthenticated()) return [];
-  return Promise.all((photos || []).map(function(photo, index) {
-    return uploadPendingMediaRef(photo, localId, index);
-  }));
+  var refs = (photos || []).map(function(photo) { return Object.assign({}, photo); });
+  for (var index = 0; index < refs.length; index++) {
+    refs[index] = await uploadPendingMediaRef(refs[index], localId, index, async function(ref) {
+      refs[index] = Object.assign({}, ref);
+      if (onCheckpoint) await onCheckpoint(index, refs[index]);
+    });
+  }
+  return refs;
 }
 
 async function uploadDataUrlResource(url, path) {
@@ -1299,6 +1305,7 @@ async function uploadDataUrlResource(url, path) {
 
 async function uploadPendingMediaRef(photo, localId, index) {
   if (!requireAuthenticated()) return null;
+  var onCheckpoint = arguments[3];
   var ref = Object.assign({}, photo);
   if (ref.url && ref.url.startsWith("data:")) {
     var name = ref.name || ("photo-" + (index + 1) + ".jpg");
@@ -1307,6 +1314,7 @@ async function uploadPendingMediaRef(photo, localId, index) {
     ref.path = path;
     ref.url = uploadedPhoto.url;
     ref.type = ref.type || uploadedPhoto.blob.type;
+    if (onCheckpoint) await onCheckpoint(ref);
   }
   if (ref.motion_url && ref.motion_url.startsWith("data:")) {
     var motionName = ref.motion_name || ("motion-" + (index + 1) + ".mov");
@@ -1315,6 +1323,7 @@ async function uploadPendingMediaRef(photo, localId, index) {
     ref.motion_path = motionPath;
     ref.motion_url = uploadedMotion.url;
     ref.motion_type = ref.motion_type || uploadedMotion.blob.type;
+    if (onCheckpoint) await onCheckpoint(ref);
   }
   return ref;
 }
@@ -1326,7 +1335,12 @@ async function syncPendingRecords() {
   for (var i = 0; i < pendingRecords.length; i++) {
     var pending = pendingRecords[i];
     var cloudRecord = window.RecordRecovery.toCloudRecord(pending);
-    cloudRecord.photos = await uploadPendingRecordPhotos(cloudRecord.photos, pending.local_id);
+    cloudRecord.photos = await uploadPendingRecordPhotos(cloudRecord.photos, pending.local_id, function(index, ref) {
+      var pendingPhotos = Array.isArray(pending.photos) ? pending.photos.slice() : [];
+      pendingPhotos[index] = Object.assign({}, ref);
+      pending.photos = pendingPhotos;
+      if (!saveCachedData()) throw new Error("本机空间不足，无法保存媒体同步进度");
+    });
     await state.client.insert(tables.records, [cloudRecord]);
     state.records = state.records.filter(function(record) { return record.local_id !== pending.local_id; });
     saveCachedData();
@@ -1425,7 +1439,9 @@ async function uploadStoryFiles(files, folder) {
   resetUploadCompressionStats();
   try {
     for (var i = 0; i < files.length; i++) {
-      refs.push(await uploadMediaItem(files[i], folder, i));
+      var ref = await uploadMediaItem(files[i], folder, i);
+      if (!requireAuthenticated(null, true)) throw new Error("请先登录后再保存");
+      refs.push(ref);
     }
   } catch (error) {
     error.uploadedMedia = refs;
@@ -1631,6 +1647,7 @@ async function saveCapsule(entry, index) {
     await fetchCapsules();
   } else if (index >= 0) state.capsules[index] = Object.assign({}, state.capsules[index], entry);
   else state.capsules.unshift(entry);
+  return true;
 }
 
 async function submitCapsuleForm(event) {
@@ -1645,7 +1662,7 @@ async function submitCapsuleForm(event) {
     var now = new Date().toISOString();
     var entry = { title: fd.get("title").trim(), body: fd.get("body").trim(), unlock_date: fd.get("unlock_date"),
       photos: newPhotos, created_at: current ? current.created_at : now, updated_at: now };
-    await saveCapsule(entry, editingCapsuleIndex);
+    if (!(await saveCapsule(entry, editingCapsuleIndex))) return;
     capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; editingCapsuleIndex = -1;
     document.querySelector("#capsule-photo-preview").innerHTML = "";
     status.textContent = ""; closePanelById(capsulePanel); renderAll();
@@ -1808,11 +1825,14 @@ async function uploadPhotos(items) {
         }
         state.backendReady = false;
         entry = await localMediaRef(item);
+        if (!requireAuthenticated(null, true)) return false;
         setCloudStatus("offline");
       }
     } else {
       entry = await localMediaRef(item);
+      if (!requireAuthenticated(null, true)) return false;
     }
+    if (!requireAuthenticated(null, true)) return false;
     entry.created_at = new Date().toISOString();
     state.photos.unshift(entry);
   }
