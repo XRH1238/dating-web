@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://images.unsplash.com" />
     <link rel="stylesheet" href="styles.css?v=20260830-7" />
   </head>
-  <body>
+  <body data-authenticated="false">
     <header class="site-header">
       <a class="brand" href="#home" aria-label="回到首页">
         <span class="brand-mark">♡</span>
@@ -20,6 +20,11 @@
         <a href="#todo">想做的事</a>
         <a href="#gallery">相册</a>
       </nav>
+      <div class="auth-controls" aria-live="polite">
+        <button class="auth-button" id="auth-login-button" type="button">登录</button>
+        <span class="auth-account" id="auth-account" hidden></span>
+        <button class="auth-button" id="auth-logout-button" type="button" hidden>退出</button>
+      </div>
     </header>
     <div class="cloud-status" id="cloud-status" role="status">正在连接后端...</div>
 
@@ -139,7 +144,7 @@
             <span class="section-label">Upcoming</span>
             <h2>出游计划</h2>
           </div>
-          <button class="ghost-button" type="button" data-open-panel="plan">添加计划</button>
+          <button class="ghost-button" type="button" data-open-panel="plan" data-auth-write>添加计划</button>
         </div>
           <div class="map-board">
           <div>
@@ -168,7 +173,7 @@
             <h2>出游记录</h2>
             <p class="muted">把走过的城市、当时的心情和沿途照片，慢慢连成我们的故事。</p>
           </div>
-          <button class="button primary" type="button" data-open-record>写一条记录</button>
+          <button class="button primary" type="button" data-open-record data-auth-write>写一条记录</button>
         </div>
         <div class="story-stats" aria-label="出游故事统计">
           <span><strong id="trip-count">0</strong> 段旅程</span>
@@ -212,7 +217,7 @@
           </div>
         </div>
         <div class="todo-board">
-          <form class="inline-form" id="todo-form">
+          <form class="inline-form" id="todo-form" data-auth-write>
             <label class="sr-only" for="todo-input">写下一件想一起做的事</label>
             <input id="todo-input" name="todo" type="text" placeholder="写下一件想一起做的事" required />
             <button class="button primary" type="submit">添加</button>
@@ -233,13 +238,13 @@
             <span class="section-label">Gallery</span>
             <h2>我们的相册</h2>
           </div>
-          <div class="gallery-actions">
+          <div class="gallery-actions" data-auth-write>
             <label class="photo-city-field" for="photo-city">拍摄城市
               <input id="photo-city" type="text" placeholder="例如：厦门" />
             </label>
           </div>
         </div>
-        <label class="media-dropzone gallery-media-dropzone" data-media-dropzone="gallery" for="photo-input">
+        <label class="media-dropzone gallery-media-dropzone" data-media-dropzone="gallery" data-auth-write for="photo-input">
           <input class="media-input" id="photo-input" type="file" accept="image/*,video/*" multiple />
           <span class="media-dropzone-icon" aria-hidden="true">⇩</span>
           <strong>拖入照片或视频</strong>
@@ -251,7 +256,7 @@
       </section>
     </main>
 
-    <div class="panel" id="quick-panel" aria-hidden="true">
+    <div class="panel" id="quick-panel" aria-hidden="true" data-auth-write>
       <div class="panel-card story-form-card" role="dialog" aria-modal="true" aria-labelledby="panel-title">
         <button class="panel-close" type="button" aria-label="关闭">×</button>
         <span class="section-label" id="panel-label">Quick Add</span>
@@ -313,7 +318,7 @@
       </div>
     </div>
 
-    <div class="panel" id="record-panel" aria-hidden="true">
+    <div class="panel" id="record-panel" aria-hidden="true" data-auth-write>
       <div class="panel-card story-form-card" role="dialog" aria-modal="true" aria-labelledby="record-panel-title">
         <button class="panel-close" type="button" aria-label="关闭记录表单" data-close-panel="record-panel">×</button>
         <span class="section-label">New Memory</span><h2 id="record-panel-title">写一条出游记录</h2>
@@ -368,7 +373,7 @@
       </div>
     </div>
 
-    <div class="panel" id="capsule-panel" aria-hidden="true">
+    <div class="panel" id="capsule-panel" aria-hidden="true" data-auth-write>
       <div class="panel-card story-form-card" role="dialog" aria-modal="true" aria-labelledby="capsule-panel-title">
         <button class="panel-close" type="button" aria-label="关闭时间胶囊表单" data-close-panel="capsule-panel">×</button>
         <span class="section-label">Time Capsule</span><h2 id="capsule-panel-title">写给未来的我们</h2>
@@ -391,6 +396,26 @@
 
     <dialog class="confirm-dialog" id="confirm-dialog"><form method="dialog"><h2>请确认</h2><p id="confirm-message">确定要删除吗？</p><div><button value="cancel">取消</button><button class="button primary" value="confirm">确定删除</button></div></form></dialog>
 
+    <dialog class="auth-dialog" id="auth-dialog" aria-labelledby="auth-dialog-title">
+      <form id="auth-login-form">
+        <div class="auth-dialog-heading"><div><span class="section-label">Member Access</span><h2 id="auth-dialog-title">登录后继续编辑</h2></div><button class="auth-dialog-close" type="button" data-auth-close="auth-dialog" aria-label="关闭登录窗口">×</button></div>
+        <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
+        <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
+        <p class="form-status" id="auth-login-status" role="status" aria-live="polite"></p>
+        <div class="auth-dialog-actions"><button class="auth-link-button" id="auth-forgot-password" type="button">忘记密码</button><button class="button primary" type="submit">登录</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="auth-dialog" id="password-recovery-dialog" aria-labelledby="password-recovery-title">
+      <form id="password-recovery-form">
+        <div class="auth-dialog-heading"><div><span class="section-label">Password Recovery</span><h2 id="password-recovery-title">设置新密码</h2></div><button class="auth-dialog-close" type="button" data-auth-close="password-recovery-dialog" aria-label="关闭密码设置窗口">×</button></div>
+        <label>新密码<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
+        <label>再次输入<input name="password_confirm" type="password" autocomplete="new-password" minlength="8" required /></label>
+        <p class="form-status" id="password-recovery-status" role="status" aria-live="polite"></p>
+        <div class="auth-dialog-actions"><button class="button primary" type="submit">保存新密码</button></div>
+      </form>
+    </dialog>
+
     <dialog class="media-viewer" id="media-viewer" aria-labelledby="media-viewer-title">
       <div class="media-viewer-shell">
         <h2 class="sr-only" id="media-viewer-title">高清媒体查看器</h2>
@@ -412,7 +437,8 @@
       <p>Made for our little trips. 下一版可以继续开发登录、云端保存、地图路线和纪念日提醒。</p>
     </footer>
 
-    <script src="cloud-data-client.js?v=20260830-6"></script>
+    <script src="auth-client.js?v=20260904-1"></script>
+    <script src="cloud-data-client.js?v=20260904-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
     <script src="live-photo.js?v=20260830-5"></script>
     <script src="image-compression.js?v=20260830-6"></script>
