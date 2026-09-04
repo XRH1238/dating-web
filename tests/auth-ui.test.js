@@ -15,10 +15,16 @@ function functionStartsWithGuard(name) {
 
 function createScriptHarness(overrides = {}) {
   const body = { dataset: {} };
+  const panelStub = () => ({ classList: { add() {}, remove() {} }, setAttribute() {} });
+  const elements = {
+    '#quick-panel': panelStub(),
+    '#record-panel': panelStub(),
+    '#capsule-panel': panelStub(),
+  };
   const document = {
     body,
     addEventListener() {},
-    querySelector() { return null; },
+    querySelector(selector) { return elements[selector] || null; },
     querySelectorAll() { return []; },
   };
   const context = {
@@ -295,6 +301,79 @@ test('匿名初始读取期间登录会排队认证刷新且 pending 只插入�
   ['love_plans', 'love_records', 'love_todos', 'love_photos', 'love_capsules'].forEach(table => {
     assert.ok(authenticatedTables.includes(table), `登录后认证刷新缺少 ${table}`);
   });
+});
+
+test('旧代 pending 插入失败不能阻断认证替换后的排队刷新', async () => {
+  let rejectOldInsert;
+  let oldInsertStarted;
+  const oldInsertGate = new Promise((_, reject) => { rejectOldInsert = reject; });
+  const oldInsertReady = new Promise(resolve => { oldInsertStarted = resolve; });
+  const freshTables = [];
+  let freshInserts = 0;
+  const pending = { local_id: 'local-old-generation', pending_sync: true, title: '换登录后同步', photos: [] };
+  const freshClient = {
+    async select(table) { freshTables.push(table); return []; },
+    async insert() { freshInserts += 1; },
+  };
+  const harness = createScriptHarness({
+    window: {
+      CloudDataClient: { createCloudDataClient() { return freshClient; } },
+      RecordRecovery: {
+        toCloudRecord(record) { const next = { ...record }; delete next.local_id; delete next.pending_sync; return next; },
+        mergeRemoteRecords(remote, local) { return (local || []).filter(record => record.pending_sync).concat(remote); },
+      },
+      MediaUpload: { isVideo() { return false; } },
+    },
+  });
+  harness.hooks.setState({
+    authClient: { getAccessToken() { return 'fresh-jwt'; } }, authUser: { id: 'old-user' }, backendReady: true,
+    records: [pending], snapshotStore: { save() { return true; } },
+    client: {
+      async select() { return []; },
+      async insert() { oldInsertStarted(); return oldInsertGate; },
+    },
+  });
+
+  const oldLoad = harness.hooks.loadRemoteData();
+  await oldInsertReady;
+  await harness.hooks.handleAuthStateChange('SIGNED_OUT', null);
+  const freshLoad = harness.hooks.handleAuthStateChange('SIGNED_IN', { user: { id: 'fresh-user' } });
+  rejectOldInsert(new Error('old insert failed'));
+  await Promise.all([oldLoad, freshLoad]);
+
+  ['love_plans', 'love_records', 'love_todos', 'love_photos', 'love_capsules'].forEach(table => {
+    assert.ok(freshTables.includes(table), `认证替换后未重新读取 ${table}`);
+  });
+  assert.equal(freshInserts, 1);
+  assert.equal(harness.hooks.getState().backendReady, true);
+});
+
+test('当前认证代确实离线时结束加载并标记 backend 不可用', async () => {
+  let selects = 0;
+  let inserts = 0;
+  const pending = { local_id: 'local-current-generation', pending_sync: true, title: '离线保留', photos: [] };
+  const harness = createScriptHarness({
+    window: {
+      RecordRecovery: {
+        toCloudRecord(record) { const next = { ...record }; delete next.local_id; delete next.pending_sync; return next; },
+        mergeRemoteRecords(remote, local) { return (local || []).filter(record => record.pending_sync).concat(remote); },
+      },
+      MediaUpload: { isVideo() { return false; } },
+    },
+  });
+  harness.hooks.setState({
+    authUser: { id: 'current-user' }, backendReady: true, records: [pending], snapshotStore: { save() { return true; } },
+    client: {
+      async select() { selects += 1; return []; },
+      async insert() { inserts += 1; throw new Error('offline'); },
+    },
+  });
+
+  await harness.hooks.loadRemoteData();
+
+  assert.equal(selects, 5, '当前代失败后不应自旋重试');
+  assert.equal(inserts, 1);
+  assert.equal(harness.hooks.getState().backendReady, false);
 });
 
 test('restoreAuth 的旧空结果不会覆盖等待期间完成的新登录', async () => {

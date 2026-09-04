@@ -991,7 +991,7 @@ async function loadRemoteData() {
       remoteLoadGeneration = authMutationGeneration;
       await loadRemoteDataOnce(remoteLoadGeneration);
       if (remoteLoadGeneration !== authMutationGeneration && state.backendReady) remoteLoadQueued = true;
-    } while (remoteLoadQueued && state.backendReady);
+    } while (remoteLoadQueued);
   })();
   try { await remoteLoadPromise; }
   finally { remoteLoadPromise = null; }
@@ -1009,6 +1009,7 @@ async function loadRemoteDataOnce(loadGeneration) {
     try { await syncPendingRecords(); }
     catch (_) { failed = true; }
   }
+  if (loadGeneration !== authMutationGeneration) return;
   if (failed) {
     state.backendReady = false;
     setCloudStatus("offline");
