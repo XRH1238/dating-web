@@ -9,6 +9,7 @@ const operations = ['select', 'insert', 'update', 'delete'];
 
 function statements(sql) {
   return sql
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/--.*$/gm, '')
     .split(';')
     .map(statement => statement.replace(/\s+/g, ' ').trim())
@@ -39,14 +40,71 @@ function readSql() {
   return fs.readFileSync(sqlPath, 'utf8');
 }
 
+function expectedDropPolicyKeys() {
+  const keys = new Set();
+  const legacySuffixes = {
+    love_plans: 'plans',
+    love_records: 'records',
+    love_todos: 'todos',
+    love_photos: 'photos',
+  };
+
+  for (const table of tables) {
+    keys.add(`${table}:public read ${table}`);
+    for (const operation of ['insert', 'update', 'delete']) {
+      keys.add(`${table}:authenticated ${operation} ${table}`);
+    }
+
+    const legacyPrefix = table === 'love_capsules' ? 'Public' : 'public';
+    const legacySuffix = legacySuffixes[table] || table;
+    for (const policyVerb of ['read', 'insert', 'update', 'delete']) {
+      keys.add(`${table}:${legacyPrefix} ${policyVerb} ${legacySuffix}`);
+    }
+  }
+
+  return keys;
+}
+
 function validateApplicationPolicies(sql) {
-  const createStatements = statements(sql).filter(statement => /^create\s+policy\b/i.test(statement));
+  const parsedStatements = statements(sql);
+  const createStatements = parsedStatements.filter(statement => /^create\s+policy\b/i.test(statement));
   const policies = createStatements.map(statement => {
     const policy = parseCreatePolicy(statement);
     assert.ok(policy, `unexpected or unsafe CREATE POLICY statement: ${statement}`);
     return policy;
   });
   assert.equal(policies.length, tables.length * operations.length);
+
+  const expectedDrops = expectedDropPolicyKeys();
+  const actualDrops = [];
+  const enabledTables = [];
+  for (const statement of parsedStatements) {
+    if (/^create\s+policy\b/i.test(statement)) continue;
+
+    const enableMatch = statement.match(
+      /^alter table public\.(love_[a-z_]+) enable row level security$/i,
+    );
+    if (enableMatch) {
+      const table = enableMatch[1].toLowerCase();
+      assert.ok(tables.includes(table), `unexpected RLS table: ${table}`);
+      enabledTables.push(table);
+      continue;
+    }
+
+    const drop = parseDropPolicy(statement);
+    if (drop) {
+      const key = `${drop.table}:${drop.name}`;
+      assert.ok(expectedDrops.has(key), `unexpected DROP POLICY statement: ${statement}`);
+      actualDrops.push(key);
+      continue;
+    }
+
+    assert.fail(`unexpected SQL statement: ${statement}`);
+  }
+
+  assert.deepEqual(enabledTables.sort(), [...tables].sort());
+  assert.equal(actualDrops.length, expectedDrops.size);
+  assert.deepEqual(new Set(actualDrops), expectedDrops);
 
   for (const table of tables) {
     for (const operation of operations) {
@@ -94,6 +152,24 @@ test('each table is public read and authenticated write only', () => {
 test('an extra anonymous all-operations policy is rejected', () => {
   const malicious = `${readSql()}\ncreate policy "evil public writes" on public.love_plans for all to anon using (true) with check (true);`;
   assert.throws(() => validateApplicationPolicies(malicious));
+});
+
+test('an extra ALTER POLICY that grants anon access is rejected', () => {
+  const malicious = `${readSql()}\nalter policy "authenticated insert love_plans" on public.love_plans to anon;`;
+  assert.throws(() => validateApplicationPolicies(malicious));
+});
+
+test('an extra GRANT to anon is rejected', () => {
+  const malicious = `${readSql()}\ngrant insert, update, delete on public.love_plans to anon;`;
+  assert.throws(() => validateApplicationPolicies(malicious));
+});
+
+test('SQL-looking text and semicolons inside comments are ignored', () => {
+  const withComments = `${readSql()}
+-- grant all on public.love_plans to anon; this remains a comment
+/* alter policy "authenticated insert love_plans" on public.love_plans to anon;
+grant insert on public.love_plans to anon; */`;
+  assert.doesNotThrow(() => validateApplicationPolicies(withComments));
 });
 
 test('all repository legacy anonymous policies are explicitly removed', () => {
