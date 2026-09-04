@@ -43,9 +43,12 @@ function createScriptHarness(overrides = {}) {
   vm.runInContext(script + `\n;globalThis.__authUiHooks = {
     setState: function(next) { Object.assign(state, next); },
     getState: function() { return state; },
+    restoreAuth: restoreAuth,
+    loadRemoteData: loadRemoteData,
     syncPendingRecords: syncPendingRecords,
     uploadPhotos: uploadPhotos,
-    handleAuthStateChange: handleAuthStateChange
+    handleAuthStateChange: handleAuthStateChange,
+    afterSuccessfulSave: typeof afterSuccessfulSave === 'function' ? afterSuccessfulSave : undefined
   };`, context);
   return { context, hooks: context.__authUiHooks, body };
 }
@@ -248,4 +251,93 @@ test('密码恢复 USER_UPDATED 只触发一次远端刷新且 TOKEN_REFRESHED �
   assert.equal(clientCreations, 1);
   assert.equal(selects, 6, '一次完整远端刷新加上 pending 写入后的 records 回读，不应重复执行');
   assert.equal(inserts, 1, '恢复完成后应同步登录前已有的 pending record');
+});
+
+test('匿名初始读取期间登录会排队认证刷新且 pending 只插入一次', async () => {
+  let releaseAnonymousReads;
+  const authenticatedTables = [];
+  let inserts = 0;
+  let releaseInsert;
+  const anonymousReads = new Promise(resolve => { releaseAnonymousReads = resolve; });
+  const insertGate = new Promise(resolve => { releaseInsert = resolve; });
+  const pending = { local_id: 'local-race', pending_sync: true, title: '只写一次', photos: [] };
+  const authenticatedClient = {
+    async select(table) { authenticatedTables.push(table); return []; },
+    async insert() { inserts += 1; await insertGate; },
+  };
+  const harness = createScriptHarness({
+    window: {
+      CloudDataClient: { createCloudDataClient() { return authenticatedClient; } },
+      RecordRecovery: {
+        toCloudRecord(record) { const next = { ...record }; delete next.local_id; delete next.pending_sync; return next; },
+        mergeRemoteRecords(remote, local) { return (local || []).filter(record => record.pending_sync).concat(remote); },
+      },
+      MediaUpload: { isVideo() { return false; } },
+    },
+  });
+  harness.hooks.setState({
+    authClient: { getAccessToken() { return 'jwt'; } }, authUser: null, backendReady: true, records: [pending],
+    snapshotStore: { save() { return true; } },
+    client: { async select() { await anonymousReads; return []; } },
+  });
+
+  const initialLoad = harness.hooks.loadRemoteData();
+  await new Promise(resolve => setImmediate(resolve));
+  const loginLoad = harness.hooks.handleAuthStateChange('SIGNED_IN', { user: { id: 'user-1' } });
+  await new Promise(resolve => setImmediate(resolve));
+  releaseAnonymousReads();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  releaseInsert();
+  await Promise.all([initialLoad, loginLoad]);
+
+  assert.equal(inserts, 1, '并发的匿名读取和登录刷新不得重复插入同一 pending record');
+  ['love_plans', 'love_records', 'love_todos', 'love_photos', 'love_capsules'].forEach(table => {
+    assert.ok(authenticatedTables.includes(table), `登录后认证刷新缺少 ${table}`);
+  });
+});
+
+test('restoreAuth 的旧空结果不会覆盖等待期间完成的新登录', async () => {
+  let finishRestore;
+  const harness = createScriptHarness();
+  harness.hooks.setState({
+    authClient: {
+      async consumeRecoveryRedirect() { return null; },
+      async getSession() { return new Promise(resolve => { finishRestore = resolve; }); },
+    },
+    authUser: null,
+  });
+
+  const restoring = harness.hooks.restoreAuth();
+  await new Promise(resolve => setImmediate(resolve));
+  await harness.hooks.handleAuthStateChange('TOKEN_REFRESHED', { user: { id: 'new-user', email: 'new@example.com' } });
+  finishRestore(null);
+  await restoring;
+
+  assert.equal(harness.hooks.getState().authUser.id, 'new-user');
+});
+
+test('保存失败不执行表单清理，成功后只清理一次', async () => {
+  const harness = createScriptHarness();
+  let cleanupCount = 0;
+  assert.equal(await harness.hooks.afterSuccessfulSave(Promise.resolve(false), () => { cleanupCount += 1; }), false);
+  assert.equal(cleanupCount, 0);
+  assert.equal(await harness.hooks.afterSuccessfulSave(Promise.resolve(true), () => { cleanupCount += 1; }), true);
+  assert.equal(cleanupCount, 1);
+  assert.match(script, /afterSuccessfulSave\(savePlan\(entry\)/);
+  assert.match(script, /afterSuccessfulSave\(saveTodo\(input\.value\.trim\(\)\)/);
+});
+
+test('核心页面资源使用一致的新缓存版本', () => {
+  const styleVersion = html.match(/styles\.css\?v=([^"']+)/)?.[1];
+  const scriptVersion = html.match(/script\.js\?v=([^"']+)/)?.[1];
+  assert.ok(styleVersion);
+  assert.equal(scriptVersion, styleVersion);
+  assert.notEqual(styleVersion, '20260830-7');
+});
+
+test('退出和动态胶囊入口使用当前鉴权语义', () => {
+  assert.match(script, /hadUser\s*&&\s*event\s*!==\s*"SIGNED_OUT"/);
+  assert.match(script, /newCapsuleButton\.addEventListener\("click", function\(\) \{\s*if \(!requireAuthenticated\(\)\) return;/);
+  assert.doesNotMatch(html, /下一版可以继续开发登录/);
 });

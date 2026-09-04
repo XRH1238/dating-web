@@ -104,6 +104,11 @@ let capsuleExistingPhotos = [];
 let editingCapsuleIndex = -1;
 let activeType = "plan";
 let cloudStatusTimer;
+let authMutationGeneration = 0;
+let remoteLoadPromise = null;
+let remoteLoadQueued = false;
+let remoteLoadGeneration = -1;
+let pendingSyncPromise = null;
 let uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
 const mediaViewerCollections = new WeakMap();
 
@@ -199,6 +204,7 @@ async function restoreAuth() {
     updateAuthUi();
     return;
   }
+  var restoreGeneration = authMutationGeneration;
   try {
     var recoverySession = await state.authClient.consumeRecoveryRedirect();
     if (recoverySession) {
@@ -207,9 +213,12 @@ async function restoreAuth() {
       showDialog(passwordRecoveryDialog);
       return;
     }
+    if (restoreGeneration !== authMutationGeneration) return;
     var session = await state.authClient.getSession();
+    if (restoreGeneration !== authMutationGeneration) return;
     state.authUser = session && session.user ? session.user : null;
   } catch (_) {
+    if (restoreGeneration !== authMutationGeneration) return;
     state.authUser = null;
   }
   updateAuthUi();
@@ -217,6 +226,7 @@ async function restoreAuth() {
 
 async function handleAuthStateChange(event, session) {
   var hadUser = !!state.authUser;
+  authMutationGeneration += 1;
   state.authUser = session && session.user ? session.user : null;
   var becameAuthenticated = !hadUser && !!state.authUser;
   updateAuthUi();
@@ -227,7 +237,7 @@ async function handleAuthStateChange(event, session) {
   }
   if (!state.authUser) {
     closeWritePanels();
-    if (hadUser) showCloudNotice("登录已失效，请重新登录后继续编辑。", true);
+    if (hadUser && event !== "SIGNED_OUT") showCloudNotice("登录已失效，请重新登录后继续编辑。", true);
     return;
   }
   if (becameAuthenticated && event !== "TOKEN_REFRESHED") {
@@ -450,10 +460,11 @@ function bindEvents() {
     if (!date) return;
     var entry = { title: fd.get("title").trim(), date: date, description: fd.get("description").trim() };
     entry.segments = getRouteSegments();
-    await savePlan(entry);
-    form.reset();
-    resetPlanDatePicker();
-    closePanel();
+    await afterSuccessfulSave(savePlan(entry), function() {
+      form.reset();
+      resetPlanDatePicker();
+      closePanel();
+    });
   });
   if (todoForm) {
     todoForm.addEventListener("submit", async function(e) {
@@ -461,8 +472,7 @@ function bindEvents() {
       if (!requireAuthenticated()) return;
       var input = todoForm.querySelector("input");
       if (!input || !input.value.trim()) return;
-      await saveTodo(input.value.trim());
-      input.value = "";
+      await afterSuccessfulSave(saveTodo(input.value.trim()), function() { input.value = ""; });
     });
   }
   document.querySelectorAll("[data-todo-filter]").forEach(function(button) {
@@ -963,11 +973,35 @@ function setCloudStatus(status) {
   if (status === "connected") cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 4000);
 }
 
+async function afterSuccessfulSave(saveOperation, onSuccess) {
+  if (!(await saveOperation)) return false;
+  onSuccess();
+  return true;
+}
+
 async function loadRemoteData() {
   if (!state.backendReady) return;
+  if (remoteLoadPromise) {
+    if (remoteLoadGeneration !== authMutationGeneration) remoteLoadQueued = true;
+    return remoteLoadPromise;
+  }
+  remoteLoadPromise = (async function() {
+    do {
+      remoteLoadQueued = false;
+      remoteLoadGeneration = authMutationGeneration;
+      await loadRemoteDataOnce(remoteLoadGeneration);
+      if (remoteLoadGeneration !== authMutationGeneration && state.backendReady) remoteLoadQueued = true;
+    } while (remoteLoadQueued && state.backendReady);
+  })();
+  try { await remoteLoadPromise; }
+  finally { remoteLoadPromise = null; }
+}
+
+async function loadRemoteDataOnce(loadGeneration) {
   setCloudStatus("loading");
   var coreResults = await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
   var capsuleResult = await Promise.allSettled([fetchCapsules()]);
+  if (loadGeneration !== authMutationGeneration) return;
   if (capsuleResult[0].status === "rejected") state.capsules = [];
   renderAll();
   var failed = coreResults.some(function(result) { return result.status === "rejected"; });
@@ -1331,6 +1365,13 @@ async function uploadPendingMediaRef(photo, localId, index) {
 async function syncPendingRecords() {
   if (!requireAuthenticated(null, true)) return;
   if (!state.backendReady || !window.RecordRecovery) return;
+  if (pendingSyncPromise) return pendingSyncPromise;
+  pendingSyncPromise = runPendingRecordSync();
+  try { await pendingSyncPromise; }
+  finally { pendingSyncPromise = null; }
+}
+
+async function runPendingRecordSync() {
   var pendingRecords = state.records.filter(function(record) { return record && record.pending_sync; });
   for (var i = 0; i < pendingRecords.length; i++) {
     var pending = pendingRecords[i];
@@ -2056,7 +2097,7 @@ function renderCapsules() {
     registerMediaViewerGroup(group, capsuleMediaGroups[index]);
   });
   var newCapsuleButton = target.querySelector("[data-new-capsule]");
-  if (newCapsuleButton) newCapsuleButton.addEventListener("click", function() { editingCapsuleIndex = -1; capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; openPanelById(capsulePanel); });
+  if (newCapsuleButton) newCapsuleButton.addEventListener("click", function() { if (!requireAuthenticated()) return; editingCapsuleIndex = -1; capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; openPanelById(capsulePanel); });
   target.querySelectorAll("[data-edit-capsule]").forEach(function(button) { button.addEventListener("click", function() { editCapsule(parseInt(button.dataset.editCapsule)); }); });
   target.querySelectorAll("[data-delete-capsule]").forEach(function(button) { button.addEventListener("click", function() { deleteCapsule(parseInt(button.dataset.deleteCapsule)); }); });
 }
