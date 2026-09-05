@@ -30,11 +30,22 @@
     return result;
   }
 
+  function projectProfileMetadata(value) {
+    var source = value && typeof value === "object" ? value : {};
+    var result = {};
+    ["display_name", "avatar_url", "avatar_path"].forEach(function(key) {
+      if (typeof source[key] === "string") result[key] = source[key];
+    });
+    return result;
+  }
+
   function projectUser(value) {
     if (!value || typeof value !== "object" || value.id == null || value.id === "") return null;
     var result = { id: value.id };
     if (typeof value.email === "string") result.email = value.email;
     if (typeof value.role === "string") result.role = value.role;
+    var profile = projectProfileMetadata(value.user_metadata);
+    if (Object.keys(profile).length) result.user_metadata = profile;
     return result;
   }
 
@@ -435,6 +446,29 @@
           }
         }
         notify("USER_UPDATED", session);
+        return copyWithoutPassword(response);
+      },
+
+      updateProfile: async function(metadata) {
+        var operationGeneration = mutationGeneration;
+        var current = await getCurrentSession();
+        if (!current || !current.access_token) throw new Error("请先登录");
+        if (mutationGeneration !== operationGeneration) return null;
+        var targetSession = session;
+        if (!targetSession) return null;
+        var cleanMetadata = projectProfileMetadata(metadata);
+        var response = await authRequest("/auth/v1/user", {
+          method: "PUT",
+          headers: { Authorization: "Bearer " + current.access_token },
+          body: JSON.stringify({ data: cleanMetadata }),
+        });
+        if (session !== targetSession || mutationGeneration !== operationGeneration) return copyWithoutPassword(response);
+        var updatedUser = projectUser(response && response.user ? response.user : response);
+        if (updatedUser) {
+          session.user = updatedUser;
+          saveSession(session);
+          notify("USER_UPDATED", session);
+        }
         return copyWithoutPassword(response);
       },
 

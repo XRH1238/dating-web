@@ -199,6 +199,64 @@ test('updatePassword 使用当前用户 Bearer 并更新返回的用户信息', 
   assert.equal((await client.getSession()).user.email, 'new@example.com');
 });
 
+test('会话只保留允许展示的用户资料', async () => {
+  const storage = createStorage();
+  const { client } = createHarness(async () => jsonResponse({
+    access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600,
+    user: {
+      id: 'u1', email: 'a@example.com', role: 'authenticated',
+      user_metadata: {
+        display_name: '小恋',
+        avatar_url: 'https://cdn.example/avatar.jpg',
+        avatar_path: 'avatars/u1/avatar.jpg',
+        private_note: '不保存',
+      },
+    },
+  }), { storage });
+
+  const session = await client.signInWithPassword('a@example.com', 'password');
+
+  assert.deepEqual(session.user.user_metadata, {
+    display_name: '小恋',
+    avatar_url: 'https://cdn.example/avatar.jpg',
+    avatar_path: 'avatars/u1/avatar.jpg',
+  });
+  assert.equal(storage.value('dating-web:auth:v1').includes('private_note'), false);
+});
+
+test('updateProfile 只发送白名单资料并刷新会话用户', async () => {
+  const storage = createStorage();
+  const { client, calls } = createHarness(async (url) => {
+    if (url.includes('grant_type=password')) {
+      return jsonResponse({ access_token: 'jwt', refresh_token: 'refresh', expires_in: 3600, user: { id: 'u1', email: 'a@example.com' } });
+    }
+    return jsonResponse({
+      id: 'u1', email: 'a@example.com', role: 'authenticated',
+      user_metadata: { display_name: '新名字', avatar_url: 'https://cdn.example/new.jpg', avatar_path: 'avatars/u1/new.jpg' },
+    });
+  }, { storage });
+  const events = [];
+  client.onAuthStateChange((event) => events.push(event));
+  await client.signInWithPassword('a@example.com', 'password');
+
+  await client.updateProfile({
+    display_name: '新名字',
+    avatar_url: 'https://cdn.example/new.jpg',
+    avatar_path: 'avatars/u1/new.jpg',
+    ignored: 'drop-me',
+  });
+
+  assert.equal(calls[1].url, 'https://example.supabase.co/auth/v1/user');
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[1].options.body), { data: {
+    display_name: '新名字',
+    avatar_url: 'https://cdn.example/new.jpg',
+    avatar_path: 'avatars/u1/new.jpg',
+  }});
+  assert.equal((await client.getSession()).user.user_metadata.display_name, '新名字');
+  assert.deepEqual(events, ['SIGNED_IN', 'USER_UPDATED']);
+});
+
 test('认证状态订阅接收状态事件并可取消订阅', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const storage = createStorage();

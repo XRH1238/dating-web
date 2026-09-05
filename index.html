@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20260830-7-20260904-2" />
+    <link rel="stylesheet" href="styles.css?v=20260905-1" />
   </head>
   <body data-authenticated="false">
     <header class="site-header">
@@ -22,7 +22,10 @@
       </nav>
       <div class="auth-controls" aria-live="polite">
         <button class="auth-button" id="auth-login-button" type="button">登录</button>
-        <span class="auth-account" id="auth-account" hidden></span>
+        <button class="auth-profile-button" id="auth-profile-button" type="button" aria-label="打开个人资料" hidden>
+          <span class="auth-avatar auth-avatar-placeholder" id="auth-avatar" aria-hidden="true">♥</span>
+          <span class="auth-account" id="auth-account">已登录</span>
+        </button>
         <button class="auth-button" id="auth-logout-button" type="button" hidden>退出</button>
       </div>
     </header>
@@ -406,6 +409,29 @@
       </form>
     </dialog>
 
+    <dialog class="auth-dialog profile-dialog" id="profile-dialog" aria-labelledby="profile-dialog-title">
+      <form id="profile-form">
+        <div class="auth-dialog-heading"><div><span class="section-label">Profile</span><h2 id="profile-dialog-title">个人资料</h2></div><button class="auth-dialog-close" type="button" data-close-profile aria-label="关闭个人资料">×</button></div>
+        <label>用户名<input name="display_name" type="text" maxlength="32" autocomplete="nickname" required /></label>
+        <label class="profile-file-label" for="profile-avatar-input">选择头像
+          <input id="profile-avatar-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" />
+        </label>
+        <p class="profile-file-note">最大 12 MB，选择后可拖动和缩放图片。</p>
+        <div class="avatar-crop-stage" id="avatar-crop-stage" hidden>
+          <canvas id="avatar-crop-canvas" width="280" height="280" aria-label="拖动和缩放图片以选择头像区域"></canvas>
+          <span class="avatar-crop-mask" aria-hidden="true"></span>
+        </div>
+        <label class="avatar-zoom-label" id="avatar-zoom-label" for="avatar-zoom" hidden>缩放
+          <input id="avatar-zoom" type="range" min="1" max="3" step="0.01" value="1" />
+        </label>
+        <p class="form-status" id="profile-status" role="status" aria-live="polite"></p>
+        <div class="auth-dialog-actions">
+          <button class="button secondary" type="button" data-close-profile>取消</button>
+          <button class="button primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="auth-dialog" id="password-recovery-dialog" aria-labelledby="password-recovery-title">
       <form id="password-recovery-form">
         <div class="auth-dialog-heading"><div><span class="section-label">Password Recovery</span><h2 id="password-recovery-title">设置新密码</h2></div><button class="auth-dialog-close" type="button" data-auth-close="password-recovery-dialog" aria-label="关闭密码设置窗口">×</button></div>
@@ -437,7 +463,7 @@
       <p>Made for our little trips. 登录后可安全保存，地图路线和纪念日提醒还会继续完善。</p>
     </footer>
 
-    <script src="auth-client.js?v=20260904-1"></script>
+    <script src="auth-client.js?v=20260905-1"></script>
     <script src="cloud-data-client.js?v=20260904-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
     <script src="live-photo.js?v=20260830-5"></script>
@@ -452,6 +478,7 @@
     <script src="record-date-picker.js?v=20260830-1"></script>
     <script src="record-moods.js?v=20260830-1"></script>
     <script src="trip-planning.js?v=20260830-1"></script>
-    <script src="script.js?v=20260830-7-20260904-2"></script>
+    <script src="avatar-cropper.js?v=20260905-1"></script>
+    <script src="script.js?v=20260905-1"></script>
   </body>
 </html>
