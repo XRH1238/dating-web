@@ -29,8 +29,9 @@ test('三个上传入口共用普通图片压缩且实况照片保持原文件',
   assert.match(script, /item\.kind\s*!==\s*["']image["'][\s\S]*?return original/);
   assert.match(script, /async function uploadMediaItem/);
   assert.match(script, /async function uploadPhotos/);
-  assert.match(script, /uploadStoryFiles\(recordDraftFiles/);
-  assert.match(script, /uploadStoryFiles\(capsuleDraftFiles/);
+  assert.match(script, /submittedDraftFiles = recordDraftFiles\.slice\(\)/);
+  assert.match(script, /submittedDraftFiles = capsuleDraftFiles\.slice\(\)/);
+  assert.match(script, /uploadStoryFiles\(submittedDraftFiles/);
 });
 
 test('拖拽绑定、媒体渲染和高亮样式存在', () => {
@@ -57,6 +58,21 @@ test('页面数据库与 Storage 使用各自的 Supabase 配置', () => {
     script,
     /createCloudDataClient\(\{[\s\S]*?url:\s*supabaseConfig\.url,[\s\S]*?key:\s*supabaseConfig\.key,[\s\S]*?storageUrl:\s*storageConfig\.url,[\s\S]*?storageKey:\s*storageConfig\.key/
   );
+  assert.match(script, /storageGatewayUrl:\s*supabaseConfig\.url\s*\+\s*["']\/functions\/v1\/storage-gateway["']/);
+  assert.match(script, /storageBackend:\s*["']secondary["']/);
+  assert.match(script, /getAccessToken:\s*function\(\)\s*\{\s*return state\.authClient\.getAccessToken\(\);\s*\}/);
+});
+
+test('Gallery、Record、Capsule、Live Photo 与待同步记录继续走统一媒体客户端', () => {
+  assert.match(script, /async function uploadDataUrlResource[\s\S]*?state\.client\.upload\(storageBucket, path, blob\)/);
+  assert.match(script, /async function uploadMediaItem[\s\S]*?state\.client\.upload\(storageBucket, path, photoFile\)/);
+  assert.match(script, /item\.kind\s*===\s*["']live-photo["'][\s\S]*?state\.client\.upload\(storageBucket, motionPath, item\.motionFile\)/);
+  assert.match(script, /async function removeRecordMedia[\s\S]*?state\.client\.removeObjects\(storageBucket, paths\)/);
+  assert.match(script, /async function syncPendingRecords\(\)[\s\S]*?uploadPendingRecordPhotos\(/);
+  assert.match(script, /async function uploadPhotos\(items\)[\s\S]*?uploadMediaItem\(item, folder, i\)/);
+  assert.match(script, /submitRecordForm[\s\S]*?uploadStoryFiles\(submittedDraftFiles, ["']records["']\)/);
+  assert.match(script, /submitCapsuleForm[\s\S]*?uploadStoryFiles\(submittedDraftFiles, ["']capsules["']\)/);
+  assert.match(script, /function syncPendingRecords\([^]*?if\s*\(!requireAuthenticated\([^)]*\)\)\s*return/);
 });
 
 test('完整拖拽区具有高亮、隐藏输入和响应式媒体预览', () => {

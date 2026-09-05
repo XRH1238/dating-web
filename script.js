@@ -53,7 +53,7 @@ const provinceNames = {
 
 // State
 const state = {
-  client: null, backendReady: false,
+  client: null, backendReady: false, authClient: null, authUser: null,
   plans: [], records: [], todos: [], photos: [], capsules: [], todoPage: 1, todoFilter: "all",
   snapshotStore: null, recordDraftStore: null,
 };
@@ -77,6 +77,10 @@ const recordDatePicker = document.querySelector("#record-date-picker");
 const recordSubmitButton = document.querySelector("#record-submit-button");
 const capsulePanel = document.querySelector("#capsule-panel");
 const capsuleForm = document.querySelector("#capsule-form");
+const authDialog = document.querySelector("#auth-dialog");
+const authLoginForm = document.querySelector("#auth-login-form");
+const passwordRecoveryDialog = document.querySelector("#password-recovery-dialog");
+const passwordRecoveryForm = document.querySelector("#password-recovery-form");
 const planDateState = {
   active: "start",
   start: { parts: { year: "", month: "", day: "" }, iso: "" },
@@ -100,6 +104,13 @@ let capsuleExistingPhotos = [];
 let editingCapsuleIndex = -1;
 let activeType = "plan";
 let cloudStatusTimer;
+let authMutationGeneration = 0;
+let remoteLoadPromise = null;
+let remoteLoadQueued = false;
+let remoteLoadGeneration = -1;
+let pendingSyncPromise = null;
+const formEditRevisions = new WeakMap();
+const trackedForms = new WeakSet();
 let uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
 const mediaViewerCollections = new WeakMap();
 
@@ -164,9 +175,129 @@ async function init() {
   connectRecordDraftStore();
   loadCachedData();
   restoreRecordDraft();
+  connectAuth();
+  await restoreAuth();
   renderAll();
   connectSupabase();
   await loadRemoteData();
+}
+
+// ========== Authentication ==========
+function connectAuth() {
+  try {
+    state.authClient = window.AuthClient.createAuthClient({
+      url: supabaseConfig.url,
+      key: supabaseConfig.key,
+    });
+    state.authClient.onAuthStateChange(function(event, session) {
+      handleAuthStateChange(event, session).catch(function() {
+        setCloudStatus("offline");
+      });
+    });
+  } catch (_) {
+    state.authClient = null;
+    state.authUser = null;
+    updateAuthUi();
+  }
+}
+
+async function restoreAuth() {
+  if (!state.authClient) {
+    updateAuthUi();
+    return;
+  }
+  var restoreGeneration = authMutationGeneration;
+  try {
+    var recoverySession = await state.authClient.consumeRecoveryRedirect();
+    if (recoverySession) {
+      state.authUser = null;
+      updateAuthUi();
+      showDialog(passwordRecoveryDialog);
+      return;
+    }
+    if (restoreGeneration !== authMutationGeneration) return;
+    var session = await state.authClient.getSession();
+    if (restoreGeneration !== authMutationGeneration) return;
+    state.authUser = session && session.user ? session.user : null;
+  } catch (_) {
+    if (restoreGeneration !== authMutationGeneration) return;
+    state.authUser = null;
+  }
+  updateAuthUi();
+}
+
+async function handleAuthStateChange(event, session) {
+  var hadUser = !!state.authUser;
+  authMutationGeneration += 1;
+  state.authUser = session && session.user ? session.user : null;
+  var becameAuthenticated = !hadUser && !!state.authUser;
+  updateAuthUi();
+  renderAll();
+  if (event === "PASSWORD_RECOVERY") {
+    showDialog(passwordRecoveryDialog);
+    return;
+  }
+  if (!state.authUser) {
+    closeWritePanels();
+    if (hadUser && event !== "SIGNED_OUT") showCloudNotice("登录已失效，请重新登录后继续编辑。", true);
+    return;
+  }
+  if (becameAuthenticated && event !== "TOKEN_REFRESHED") {
+    connectSupabase();
+    await loadRemoteData();
+  }
+}
+
+function updateAuthUi() {
+  document.body.dataset.authenticated = state.authUser ? "true" : "false";
+  var loginButton = document.querySelector("#auth-login-button");
+  var account = document.querySelector("#auth-account");
+  var logoutButton = document.querySelector("#auth-logout-button");
+  if (loginButton) loginButton.hidden = !!state.authUser;
+  if (account) {
+    account.hidden = !state.authUser;
+    account.textContent = state.authUser ? (state.authUser.email || "已登录") : "";
+  }
+  if (logoutButton) logoutButton.hidden = !state.authUser;
+}
+
+function closeWritePanels() {
+  closePanel();
+  closePanelById(recordPanel);
+  closePanelById(capsulePanel);
+}
+
+function showDialog(dialog) {
+  if (!dialog || dialog.open) return;
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function closeDialog(dialog) {
+  if (!dialog) return;
+  if (typeof dialog.close === "function" && dialog.open) dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+function showAuthDialog(message) {
+  var status = document.querySelector("#auth-login-status");
+  if (status) status.textContent = message || "";
+  showDialog(authDialog);
+  var email = authLoginForm && authLoginForm.elements.email;
+  if (email) email.focus();
+}
+
+function requireAuthenticated(message, silent) {
+  if (state.authUser) return true;
+  if (!silent) showAuthDialog(message || "请先登录后再继续");
+  return false;
+}
+
+function authErrorMessage(error, fallback) {
+  var message = String(error && error.message || "");
+  if (error && (error.status === 400 || error.status === 401)) return "邮箱或密码不正确，请重新输入。";
+  if (/超时|网络/.test(message)) return "网络暂时不可用，请稍后重试。";
+  return fallback || "操作没有成功，请稍后重试。";
 }
 
 function mediaSelectionMessage(selection) {
@@ -179,6 +310,7 @@ function mediaSelectionMessage(selection) {
 }
 
 async function appendDraftMedia(files, current, previewSelector, statusSelector) {
+  if (!requireAuthenticated()) return current;
   var selection = window.LivePhotoMedia.selectMedia(files, current.length, 20);
   var next = current.concat(selection.items);
   await renderFilePreview(next, previewSelector);
@@ -188,9 +320,11 @@ async function appendDraftMedia(files, current, previewSelector, statusSelector)
 }
 
 async function appendRecordDraftMedia(files) {
+  if (!requireAuthenticated()) return;
   var existingCount = recordExistingPhotos.length + recordDraftFiles.length;
   var selection = window.LivePhotoMedia.selectMedia(files, existingCount, 20);
   recordDraftFiles = recordDraftFiles.concat(selection.items);
+  markFormEdited(recordForm);
   await renderRecordMediaPreview();
   var status = document.querySelector("#record-form-status");
   if (status) status.textContent = mediaSelectionMessage(selection);
@@ -203,6 +337,7 @@ function bindMediaDropzone(name, input, receiveFiles) {
   var dragDepth = 0;
   var statusSelector = name === "gallery" ? "#gallery-media-status" : "#" + name + "-form-status";
   function deliverFiles(files) {
+    if (!requireAuthenticated()) return;
     var queuedFiles = Array.from(files || []);
     Promise.resolve().then(function() {
       return receiveFiles(queuedFiles);
@@ -232,9 +367,83 @@ function bindMediaDropzone(name, input, receiveFiles) {
 }
 
 function bindEvents() {
+  [form, todoForm, recordForm, capsuleForm, authLoginForm, passwordRecoveryForm].forEach(trackFormEdits);
   bindMediaViewerTriggers();
+  var authLoginButton = document.querySelector("#auth-login-button");
+  var authLogoutButton = document.querySelector("#auth-logout-button");
+  var forgotPasswordButton = document.querySelector("#auth-forgot-password");
+  if (authLoginButton) authLoginButton.addEventListener("click", function() { showAuthDialog(""); });
+  if (authLogoutButton) authLogoutButton.addEventListener("click", async function() {
+    if (!state.authClient) return;
+    try { await state.authClient.signOut(); }
+    catch (_) { showCloudNotice("已退出本机登录，但云端退出请求没有成功。", true); }
+  });
+  document.querySelectorAll("[data-auth-close]").forEach(function(button) {
+    button.addEventListener("click", function() { closeDialog(document.querySelector("#" + button.dataset.authClose)); });
+  });
+  if (authLoginForm) authLoginForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+    var saveContext = captureFormSave(authLoginForm, 1);
+    var status = document.querySelector("#auth-login-status");
+    var submit = authLoginForm.querySelector('[type="submit"]');
+    var fd = new FormData(authLoginForm);
+    if (!state.authClient) { status.textContent = "登录服务暂不可用，请稍后重试。"; return; }
+    submit.disabled = true;
+    status.textContent = "正在登录...";
+    try {
+      await state.authClient.signInWithPassword(String(fd.get("email") || "").trim(), String(fd.get("password") || ""));
+      if (!isCurrentFormSave(saveContext)) return;
+      authLoginForm.reset();
+      status.textContent = "";
+      closeDialog(authDialog);
+    } catch (error) {
+      status.textContent = authErrorMessage(error, "登录没有成功，请检查邮箱和密码。");
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  if (forgotPasswordButton) forgotPasswordButton.addEventListener("click", async function() {
+    var email = authLoginForm && authLoginForm.elements.email;
+    var status = document.querySelector("#auth-login-status");
+    if (!email || !email.value.trim()) {
+      status.textContent = "请先填写接收重置邮件的邮箱。";
+      if (email) email.focus();
+      return;
+    }
+    try {
+      status.textContent = "正在发送重置邮件...";
+      await state.authClient.resetPasswordForEmail(email.value.trim(), window.location.href.replace(/#.*/, ""));
+      status.textContent = "如果该邮箱已创建账号，重置邮件会很快送达。";
+    } catch (error) {
+      status.textContent = authErrorMessage(error, "重置邮件没有发送成功，请稍后重试。");
+    }
+  });
+  if (passwordRecoveryForm) passwordRecoveryForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+    var saveContext = captureFormSave(passwordRecoveryForm, 1);
+    var status = document.querySelector("#password-recovery-status");
+    var submit = passwordRecoveryForm.querySelector('[type="submit"]');
+    var fd = new FormData(passwordRecoveryForm);
+    var password = String(fd.get("password") || "");
+    if (password !== String(fd.get("password_confirm") || "")) { status.textContent = "两次输入的密码不一致。"; return; }
+    submit.disabled = true;
+    status.textContent = "正在保存新密码...";
+    try {
+      await state.authClient.updatePassword(password);
+      if (!isCurrentFormSave(saveContext)) return;
+      passwordRecoveryForm.reset();
+      status.textContent = "";
+      closeDialog(passwordRecoveryDialog);
+      showCloudNotice("密码已更新。", false);
+    } catch (error) {
+      status.textContent = authErrorMessage(error, "密码没有更新成功，请重新打开恢复邮件。");
+    } finally {
+      submit.disabled = false;
+    }
+  });
   document.querySelectorAll("[data-open-panel]").forEach(function(btn) {
     btn.addEventListener("click", function() {
+      if (!requireAuthenticated()) return;
       activeType = "plan";
       panelTitle.textContent = "添加出游计划";
       panelLabel.textContent = "New Plan";
@@ -253,23 +462,25 @@ function bindEvents() {
   });
   form.addEventListener("submit", async function(e) {
     e.preventDefault();
+    if (!requireAuthenticated()) return;
     var fd = new FormData(form);
     var date = validatePlanDateRange();
     if (!date) return;
     var entry = { title: fd.get("title").trim(), date: date, description: fd.get("description").trim() };
     entry.segments = getRouteSegments();
-    await savePlan(entry);
-    form.reset();
-    resetPlanDatePicker();
-    closePanel();
+    await afterSuccessfulSave(savePlan(entry), function() {
+      form.reset();
+      resetPlanDatePicker();
+      closePanel();
+    }, form);
   });
   if (todoForm) {
     todoForm.addEventListener("submit", async function(e) {
       e.preventDefault();
+      if (!requireAuthenticated()) return;
       var input = todoForm.querySelector("input");
       if (!input || !input.value.trim()) return;
-      await saveTodo(input.value.trim());
-      input.value = "";
+      await afterSuccessfulSave(saveTodo(input.value.trim()), function() { input.value = ""; }, todoForm);
     });
   }
   document.querySelectorAll("[data-todo-filter]").forEach(function(button) {
@@ -287,6 +498,7 @@ function bindEvents() {
   });
   var openRecord = document.querySelector("[data-open-record]");
   if (openRecord) openRecord.addEventListener("click", function() {
+    if (!requireAuthenticated()) return;
     if (editingRecordId !== null) {
       clearRecordEditor(true);
       restoreRecordDraft();
@@ -326,8 +538,10 @@ function bindEvents() {
   bindMediaDropzone("capsule", capsulePhotoInput, async function(files) {
     var hadDraftMedia = capsuleDraftFiles.length > 0;
     var nextDraftMedia = await appendDraftMedia(files, capsuleDraftFiles, "#capsule-photo-preview", "#capsule-form-status");
+    if (!requireAuthenticated(null, true)) return;
     if (!hadDraftMedia && nextDraftMedia.length) capsuleExistingPhotos = [];
     capsuleDraftFiles = nextDraftMedia;
+    markFormEdited(capsuleForm);
   });
   if (recordForm) {
     recordForm.addEventListener("submit", submitRecordForm);
@@ -359,6 +573,7 @@ function closePanel() {
 }
 
 function openPanelById(target) {
+  if (!requireAuthenticated()) return;
   if (!target) return;
   target.classList.add("is-open");
   target.setAttribute("aria-hidden", "false");
@@ -743,6 +958,9 @@ function connectSupabase() {
       key: supabaseConfig.key,
       storageUrl: storageConfig.url,
       storageKey: storageConfig.key,
+      getAccessToken: function() { return state.authClient.getAccessToken(); },
+      storageGatewayUrl: supabaseConfig.url + "/functions/v1/storage-gateway",
+      storageBackend: "secondary",
     });
     state.backendReady = true;
   } catch (err) {
@@ -764,11 +982,64 @@ function setCloudStatus(status) {
   if (status === "connected") cloudStatusTimer = setTimeout(function() { setCloudStatus(""); }, 4000);
 }
 
+function markFormEdited(target) {
+  if (target) formEditRevisions.set(target, (formEditRevisions.get(target) || 0) + 1);
+}
+
+function trackFormEdits(target) {
+  if (!target || trackedForms.has(target)) return;
+  trackedForms.add(target);
+  ["input", "change", "reset", "click", "drop"].forEach(function(type) {
+    target.addEventListener(type, function() { markFormEdited(target); });
+  });
+}
+
+function captureFormSave(target, expectedAuthMutations) {
+  markFormEdited(target);
+  return { form: target, revision: target ? formEditRevisions.get(target) : 0,
+    authGeneration: authMutationGeneration + (expectedAuthMutations || 0) };
+}
+
+function isCurrentFormSave(context) {
+  return context.authGeneration === authMutationGeneration &&
+    (!context.form || context.revision === formEditRevisions.get(context.form));
+}
+
+function completeFormSave(context, onSuccess) {
+  if (!isCurrentFormSave(context)) return false;
+  onSuccess();
+  return true;
+}
+
+async function afterSuccessfulSave(saveOperation, onSuccess, target) {
+  var saveContext = captureFormSave(target);
+  if (!(await saveOperation)) return false;
+  return completeFormSave(saveContext, onSuccess);
+}
+
 async function loadRemoteData() {
   if (!state.backendReady) return;
+  if (remoteLoadPromise) {
+    if (remoteLoadGeneration !== authMutationGeneration) remoteLoadQueued = true;
+    return remoteLoadPromise;
+  }
+  remoteLoadPromise = (async function() {
+    do {
+      remoteLoadQueued = false;
+      remoteLoadGeneration = authMutationGeneration;
+      await loadRemoteDataOnce(remoteLoadGeneration);
+      if (remoteLoadGeneration !== authMutationGeneration && state.backendReady) remoteLoadQueued = true;
+    } while (remoteLoadQueued);
+  })();
+  try { await remoteLoadPromise; }
+  finally { remoteLoadPromise = null; }
+}
+
+async function loadRemoteDataOnce(loadGeneration) {
   setCloudStatus("loading");
   var coreResults = await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
   var capsuleResult = await Promise.allSettled([fetchCapsules()]);
+  if (loadGeneration !== authMutationGeneration) return;
   if (capsuleResult[0].status === "rejected") state.capsules = [];
   renderAll();
   var failed = coreResults.some(function(result) { return result.status === "rejected"; });
@@ -776,6 +1047,7 @@ async function loadRemoteData() {
     try { await syncPendingRecords(); }
     catch (_) { failed = true; }
   }
+  if (loadGeneration !== authMutationGeneration) return;
   if (failed) {
     state.backendReady = false;
     setCloudStatus("offline");
@@ -789,12 +1061,14 @@ async function fetchPlans() {
   state.plans = await state.client.select(tables.plans);
 }
 async function savePlan(entry) {
+  if (!requireAuthenticated()) return false;
   entry.created_at = new Date().toISOString();
   if (state.backendReady) {
     try {
       await state.client.insert(tables.plans, [entry]);
       await fetchPlans();
     } catch (_) {
+      if (!state.authUser) { requireAuthenticated(); return false; }
       state.backendReady = false;
       state.plans.unshift(entry);
       setCloudStatus("offline");
@@ -803,10 +1077,13 @@ async function savePlan(entry) {
     state.plans.unshift(entry);
   }
   renderAll();
+  return true;
 }
 async function deletePlan(index) {
+  if (!requireAuthenticated()) return false;
   var plan = state.plans[index];
   if (!plan || !(await confirmAction("确定删除这个出游计划吗？删除后无法恢复。"))) return;
+  if (!requireAuthenticated()) return false;
   if (state.backendReady && plan.id) {
     try {
       await state.client.remove(tables.plans, plan.id);
@@ -861,6 +1138,7 @@ function createMoodOption(value, isDefault) {
 }
 
 function addCustomMood() {
+  if (!requireAuthenticated()) return;
   var inputField = document.querySelector("#custom-mood-input");
   var options = document.querySelector("#mood-options");
   var status = document.querySelector("#mood-status");
@@ -895,6 +1173,7 @@ function hasRecordDraftContent(draft) {
 }
 
 function saveRecordDraft() {
+  if (!requireAuthenticated(null, true)) return;
   if (editingRecordId !== null) return;
   if (!state.recordDraftStore) return;
   var draft = collectRecordDraft();
@@ -995,19 +1274,24 @@ async function renderRecordMediaPreview() {
 }
 
 function removeExistingRecordMedia(index) {
+  if (!requireAuthenticated()) return;
   if (index < 0 || index >= recordExistingPhotos.length) return;
   recordRemovedPhotos.push(recordExistingPhotos.splice(index, 1)[0]);
+  markFormEdited(recordForm);
   renderRecordMediaPreview();
 }
 
 function removeNewRecordMedia(index) {
+  if (!requireAuthenticated()) return;
   if (index < 0 || index >= recordDraftFiles.length) return;
   recordDraftFiles.splice(index, 1);
+  markFormEdited(recordForm);
   renderRecordMediaPreview();
   saveRecordDraft();
 }
 
 function openRecordEditor(recordId) {
+  if (!requireAuthenticated()) return;
   var record = state.records.find(function(item) { return String(item.id) === String(recordId); });
   if (!record) return;
   saveRecordDraft();
@@ -1058,7 +1342,8 @@ async function localStoryPhotoRefs(items) {
   return Promise.all(items.map(localMediaRef));
 }
 
-function persistPendingRecord(entry, status) {
+function persistPendingRecord(entry, status, saveContext) {
+  if (!requireAuthenticated()) return false;
   var pending = window.RecordRecovery.createPendingRecord(entry, createLocalRecordId());
   state.records.unshift(pending);
   if (!renderAll()) {
@@ -1067,19 +1352,28 @@ function persistPendingRecord(entry, status) {
     status.textContent = "本机空间不足，记录尚未保存。请先复制文字并减少照片后重试。";
     return false;
   }
-  clearRecordEditor();
-  closePanelById(recordPanel);
+  if (!saveContext || isCurrentFormSave(saveContext)) {
+    clearRecordEditor();
+    closePanelById(recordPanel);
+  }
   setCloudStatus("offline");
   return true;
 }
 
-async function uploadPendingRecordPhotos(photos, localId) {
-  return Promise.all((photos || []).map(function(photo, index) {
-    return uploadPendingMediaRef(photo, localId, index);
-  }));
+async function uploadPendingRecordPhotos(photos, localId, onCheckpoint) {
+  if (!requireAuthenticated()) return [];
+  var refs = (photos || []).map(function(photo) { return Object.assign({}, photo); });
+  for (var index = 0; index < refs.length; index++) {
+    refs[index] = await uploadPendingMediaRef(refs[index], localId, index, async function(ref) {
+      refs[index] = Object.assign({}, ref);
+      if (onCheckpoint) await onCheckpoint(index, refs[index]);
+    });
+  }
+  return refs;
 }
 
 async function uploadDataUrlResource(url, path) {
+  if (!requireAuthenticated()) return null;
   var response = await fetch(url);
   var blob = await response.blob();
   await state.client.upload(storageBucket, path, blob);
@@ -1087,6 +1381,8 @@ async function uploadDataUrlResource(url, path) {
 }
 
 async function uploadPendingMediaRef(photo, localId, index) {
+  if (!requireAuthenticated()) return null;
+  var onCheckpoint = arguments[3];
   var ref = Object.assign({}, photo);
   if (ref.url && ref.url.startsWith("data:")) {
     var name = ref.name || ("photo-" + (index + 1) + ".jpg");
@@ -1095,6 +1391,7 @@ async function uploadPendingMediaRef(photo, localId, index) {
     ref.path = path;
     ref.url = uploadedPhoto.url;
     ref.type = ref.type || uploadedPhoto.blob.type;
+    if (onCheckpoint) await onCheckpoint(ref);
   }
   if (ref.motion_url && ref.motion_url.startsWith("data:")) {
     var motionName = ref.motion_name || ("motion-" + (index + 1) + ".mov");
@@ -1103,17 +1400,31 @@ async function uploadPendingMediaRef(photo, localId, index) {
     ref.motion_path = motionPath;
     ref.motion_url = uploadedMotion.url;
     ref.motion_type = ref.motion_type || uploadedMotion.blob.type;
+    if (onCheckpoint) await onCheckpoint(ref);
   }
   return ref;
 }
 
 async function syncPendingRecords() {
+  if (!requireAuthenticated(null, true)) return;
   if (!state.backendReady || !window.RecordRecovery) return;
+  if (pendingSyncPromise) return pendingSyncPromise;
+  pendingSyncPromise = runPendingRecordSync();
+  try { await pendingSyncPromise; }
+  finally { pendingSyncPromise = null; }
+}
+
+async function runPendingRecordSync() {
   var pendingRecords = state.records.filter(function(record) { return record && record.pending_sync; });
   for (var i = 0; i < pendingRecords.length; i++) {
     var pending = pendingRecords[i];
     var cloudRecord = window.RecordRecovery.toCloudRecord(pending);
-    cloudRecord.photos = await uploadPendingRecordPhotos(cloudRecord.photos, pending.local_id);
+    cloudRecord.photos = await uploadPendingRecordPhotos(cloudRecord.photos, pending.local_id, function(index, ref) {
+      var pendingPhotos = Array.isArray(pending.photos) ? pending.photos.slice() : [];
+      pendingPhotos[index] = Object.assign({}, ref);
+      pending.photos = pendingPhotos;
+      if (!saveCachedData()) throw new Error("本机空间不足，无法保存媒体同步进度");
+    });
     await state.client.insert(tables.records, [cloudRecord]);
     state.records = state.records.filter(function(record) { return record.local_id !== pending.local_id; });
     saveCachedData();
@@ -1124,12 +1435,14 @@ async function syncPendingRecords() {
   }
 }
 async function saveRecord(entry) {
+  if (!requireAuthenticated()) return false;
   entry.created_at = new Date().toISOString();
   if (state.backendReady) {
     try {
       await state.client.insert(tables.records, [entry]);
       await fetchRecords();
     } catch (_) {
+      if (!state.authUser) { requireAuthenticated(); return false; }
       state.backendReady = false;
       state.records.unshift(entry);
       setCloudStatus("offline");
@@ -1181,6 +1494,7 @@ async function prepareUploadPhoto(item) {
 }
 
 async function uploadMediaItem(item, folder, index) {
+  if (!requireAuthenticated()) return null;
   if (!state.backendReady) return localMediaRef(item);
   var stamp = Date.now() + "-" + index;
   var photoFile = await prepareUploadPhoto(item);
@@ -1204,11 +1518,14 @@ async function uploadMediaItem(item, folder, index) {
 }
 
 async function uploadStoryFiles(files, folder) {
+  if (!requireAuthenticated()) return [];
   var refs = [];
   resetUploadCompressionStats();
   try {
     for (var i = 0; i < files.length; i++) {
-      refs.push(await uploadMediaItem(files[i], folder, i));
+      var ref = await uploadMediaItem(files[i], folder, i);
+      if (!requireAuthenticated(null, true)) throw new Error("请先登录后再保存");
+      refs.push(ref);
     }
   } catch (error) {
     error.uploadedMedia = refs;
@@ -1227,8 +1544,10 @@ function recordMediaPaths(items) {
 }
 
 async function removeRecordMedia(items) {
+  if (!requireAuthenticated()) return false;
   var paths = recordMediaPaths(items);
   if (paths.length) await state.client.removeObjects(storageBucket, paths);
+  return true;
 }
 
 async function cleanupUploadedRecordMedia(items) {
@@ -1296,20 +1615,26 @@ async function renderFilePreview(files, selector) {
 
 async function submitRecordForm(event) {
   event.preventDefault();
+  if (!requireAuthenticated()) return;
+  var saveContext = captureFormSave(recordForm);
+  var submittedRecordId = editingRecordId;
+  var submittedExistingPhotos = recordExistingPhotos.slice();
+  var submittedRemovedPhotos = recordRemovedPhotos.slice();
+  var submittedDraftFiles = recordDraftFiles.slice();
   var status = document.querySelector("#record-form-status");
   var date = validateRecordDateRange();
   if (!date) return;
   var fd = new FormData(recordForm);
   var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
     description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: [] };
-  if (recordExistingPhotos.length + recordDraftFiles.length > 20) {
+  if (submittedExistingPhotos.length + submittedDraftFiles.length > 20) {
     status.textContent = "每条记录最多保留 20 个媒体项目，请先移除一些照片或视频。";
     return;
   }
   if (recordSubmitButton) recordSubmitButton.disabled = true;
   var uploadedPhotos = null;
   var inserted = false;
-  if (editingRecordId !== null) {
+  if (submittedRecordId !== null) {
     if (!state.backendReady || !state.client) {
       status.textContent = "修改需要连接云端，表单内容仍保留，请检查网络后重试。";
       if (recordSubmitButton) recordSubmitButton.disabled = false;
@@ -1317,9 +1642,9 @@ async function submitRecordForm(event) {
     }
     try {
       status.textContent = "正在保存修改...";
-      uploadedPhotos = await uploadStoryFiles(recordDraftFiles, "records");
-      entry.photos = recordExistingPhotos.concat(uploadedPhotos);
-      await state.client.update(tables.records, editingRecordId, entry);
+      uploadedPhotos = await uploadStoryFiles(submittedDraftFiles, "records");
+      entry.photos = submittedExistingPhotos.concat(uploadedPhotos);
+      await state.client.update(tables.records, submittedRecordId, entry);
     } catch (error) {
       var partiallyUploaded = uploadedPhotos || error.uploadedMedia || [];
       if (partiallyUploaded.length) await cleanupUploadedRecordMedia(partiallyUploaded);
@@ -1330,16 +1655,18 @@ async function submitRecordForm(event) {
       return;
     }
     var removalWarning = false;
-    try { await removeRecordMedia(recordRemovedPhotos); }
+    try { await removeRecordMedia(submittedRemovedPhotos); }
     catch (_) { removalWarning = true; }
     try { await fetchRecords(); }
     catch (_) {
-      var localRecord = state.records.find(function(item) { return String(item.id) === String(editingRecordId); });
+      var localRecord = state.records.find(function(item) { return String(item.id) === String(submittedRecordId); });
       if (localRecord) Object.assign(localRecord, entry);
     }
-    clearRecordEditor(true);
-    restoreRecordDraft();
-    closePanelById(recordPanel);
+    completeFormSave(saveContext, function() {
+      clearRecordEditor(true);
+      restoreRecordDraft();
+      closePanelById(recordPanel);
+    });
     renderAll();
     showCloudNotice(removalWarning ? "修改已保存，但有部分旧文件暂未清理。" : "出游记录已更新。", removalWarning);
     if (recordSubmitButton) recordSubmitButton.disabled = false;
@@ -1349,33 +1676,42 @@ async function submitRecordForm(event) {
   try {
     status.textContent = "正在保存这段故事...";
     if (state.backendReady) {
-      uploadedPhotos = await uploadStoryFiles(recordDraftFiles, "records");
+      uploadedPhotos = await uploadStoryFiles(submittedDraftFiles, "records");
       entry.photos = uploadedPhotos;
       await state.client.insert(tables.records, [entry]);
       inserted = true;
       await fetchRecords();
-      clearRecordEditor();
-      status.textContent = "";
-      closePanelById(recordPanel);
+      completeFormSave(saveContext, function() {
+        clearRecordEditor();
+        status.textContent = "";
+        closePanelById(recordPanel);
+      });
       renderAll();
       if (recordSubmitButton) recordSubmitButton.disabled = false;
       return;
     }
-    entry.photos = await localStoryPhotoRefs(recordDraftFiles);
-    persistPendingRecord(entry, status);
+    entry.photos = await localStoryPhotoRefs(submittedDraftFiles);
+    persistPendingRecord(entry, status, saveContext);
   } catch (error) {
     state.backendReady = false; setCloudStatus("offline");
+    if (!state.authUser) {
+      status.textContent = "登录已失效，草稿仍保留，请重新登录后保存。";
+      requireAuthenticated();
+      return;
+    }
     if (inserted) {
       state.records.unshift(entry);
       renderAll();
-      clearRecordEditor();
-      closePanelById(recordPanel);
+      completeFormSave(saveContext, function() {
+        clearRecordEditor();
+        closePanelById(recordPanel);
+      });
       if (recordSubmitButton) recordSubmitButton.disabled = false;
       return;
     }
     try {
-      entry.photos = uploadedPhotos || await localStoryPhotoRefs(recordDraftFiles);
-      if (persistPendingRecord(entry, status)) return;
+      entry.photos = uploadedPhotos || await localStoryPhotoRefs(submittedDraftFiles);
+      if (persistPendingRecord(entry, status, saveContext)) return;
     } catch (_) {}
     status.textContent = "保存没有成功，草稿仍保存在本机。请复制文字并检查网络后重试。";
   } finally {
@@ -1384,8 +1720,10 @@ async function submitRecordForm(event) {
 }
 
 async function deleteRecord(index) {
+  if (!requireAuthenticated()) return false;
   var record = state.records[index];
   if (!record || !(await confirmAction("确定删除这段出游记录吗？删除后无法恢复。"))) return;
+  if (!requireAuthenticated()) return false;
   if (state.backendReady && record.id) {
     try { await state.client.remove(tables.records, record.id); }
     catch (_) { setCloudStatus("offline"); return; }
@@ -1396,27 +1734,38 @@ async function deleteRecord(index) {
 // ========== Time capsules ==========
 async function fetchCapsules() { state.capsules = await state.client.select(tables.capsules); }
 
-async function saveCapsule(entry, index) {
+async function saveCapsule(entry, index, submittedId) {
+  if (!requireAuthenticated()) return false;
   if (state.backendReady) {
-    if (index >= 0 && state.capsules[index] && state.capsules[index].id) await state.client.update(tables.capsules, state.capsules[index].id, entry);
+    var targetId = arguments.length >= 3 ? submittedId : (index >= 0 && state.capsules[index] && state.capsules[index].id);
+    if (targetId) await state.client.update(tables.capsules, targetId, entry);
     else await state.client.insert(tables.capsules, [entry]);
     await fetchCapsules();
   } else if (index >= 0) state.capsules[index] = Object.assign({}, state.capsules[index], entry);
   else state.capsules.unshift(entry);
+  return true;
 }
 
 async function submitCapsuleForm(event) {
   event.preventDefault();
+  if (!requireAuthenticated()) return;
+  var saveContext = captureFormSave(capsuleForm);
+  var submittedCapsuleIndex = editingCapsuleIndex;
+  var submittedCapsule = submittedCapsuleIndex >= 0 ? state.capsules[submittedCapsuleIndex] : null;
+  var submittedCapsuleId = submittedCapsule && submittedCapsule.id;
+  var submittedDraftFiles = capsuleDraftFiles.slice();
+  var submittedExistingPhotos = capsuleExistingPhotos.slice();
   var status = document.querySelector("#capsule-form-status");
   var fd = new FormData(capsuleForm);
   try {
     status.textContent = "正在封存...";
-    var newPhotos = capsuleDraftFiles.length ? await uploadStoryFiles(capsuleDraftFiles, "capsules") : capsuleExistingPhotos;
-    var current = editingCapsuleIndex >= 0 ? state.capsules[editingCapsuleIndex] : null;
+    var newPhotos = submittedDraftFiles.length ? await uploadStoryFiles(submittedDraftFiles, "capsules") : submittedExistingPhotos;
+    var current = submittedCapsule;
     var now = new Date().toISOString();
     var entry = { title: fd.get("title").trim(), body: fd.get("body").trim(), unlock_date: fd.get("unlock_date"),
       photos: newPhotos, created_at: current ? current.created_at : now, updated_at: now };
-    await saveCapsule(entry, editingCapsuleIndex);
+    if (!(await saveCapsule(entry, submittedCapsuleIndex, submittedCapsuleId))) return;
+    if (!isCurrentFormSave(saveContext)) return;
     capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; editingCapsuleIndex = -1;
     document.querySelector("#capsule-photo-preview").innerHTML = "";
     status.textContent = ""; closePanelById(capsulePanel); renderAll();
@@ -1427,6 +1776,7 @@ async function submitCapsuleForm(event) {
 }
 
 function editCapsule(index) {
+  if (!requireAuthenticated()) return;
   var capsule = state.capsules[index];
   if (!capsule || !window.StoryData.getCapsuleState(capsule).editable) return;
   editingCapsuleIndex = index; capsuleDraftFiles = []; capsuleExistingPhotos = Array.isArray(capsule.photos) ? capsule.photos : [];
@@ -1440,8 +1790,10 @@ function editCapsule(index) {
 }
 
 async function deleteCapsule(index) {
+  if (!requireAuthenticated()) return false;
   var capsule = state.capsules[index];
   if (!capsule || !(await confirmAction("确定删除这个时间胶囊吗？删除后无法恢复。"))) return;
+  if (!requireAuthenticated()) return false;
   if (state.backendReady && capsule.id) { try { await state.client.remove(tables.capsules, capsule.id); } catch (_) { setCloudStatus("offline"); return; } }
   state.capsules.splice(index, 1); renderAll();
 }
@@ -1459,12 +1811,14 @@ async function fetchTodos() {
   state.todos = await state.client.select(tables.todos);
 }
 async function saveTodo(text) {
+  if (!requireAuthenticated()) return false;
   var entry = { text: text, done: false, created_at: new Date().toISOString() };
   if (state.backendReady) {
     try {
       await state.client.insert(tables.todos, [entry]);
       await fetchTodos();
     } catch (_) {
+      if (!state.authUser) { requireAuthenticated(); return false; }
       state.backendReady = false;
       state.todos.unshift(entry);
       setCloudStatus("offline");
@@ -1473,8 +1827,10 @@ async function saveTodo(text) {
     state.todos.unshift(entry);
   }
   renderAll();
+  return true;
 }
 async function toggleTodo(index) {
+  if (!requireAuthenticated()) return false;
   var todo = state.todos[index];
   if (!todo) return;
   todo.done = !todo.done;
@@ -1482,6 +1838,12 @@ async function toggleTodo(index) {
     try {
       await state.client.update(tables.todos, todo.id, { done: todo.done });
     } catch (_) {
+      if (!state.authUser) {
+        todo.done = !todo.done;
+        requireAuthenticated();
+        renderAll();
+        return false;
+      }
       state.backendReady = false;
       setCloudStatus("offline");
     }
@@ -1489,8 +1851,10 @@ async function toggleTodo(index) {
   renderAll();
 }
 async function deleteTodo(index) {
+  if (!requireAuthenticated()) return false;
   var todo = state.todos[index];
   if (!todo || !(await confirmAction("确定删除这件想做的事吗？删除后无法恢复。"))) return;
+  if (!requireAuthenticated()) return false;
   if (state.backendReady && todo.id) {
     try {
       await state.client.remove(tables.todos, todo.id);
@@ -1523,6 +1887,7 @@ function fileToDataUrl(file) {
 }
 
 async function uploadPhotos(items) {
+  if (!requireAuthenticated()) return false;
   if (!items || !items.length) return;
   var city = photoCityInput ? photoCityInput.value.trim() : "";
   var status = document.querySelector("#gallery-media-status");
@@ -1553,16 +1918,24 @@ async function uploadPhotos(items) {
         }
         await state.client.insert(tables.photos, [cloudEntry]);
       } catch (_) {
+        if (!state.authUser) {
+          if (status) status.textContent = "登录已失效，请重新登录后上传。";
+          requireAuthenticated();
+          return false;
+        }
         if (item.kind === "live-photo" && status) {
           status.textContent = "云端尚未启用实况照片字段，请先执行数据库迁移；照片已保留在本机。";
         }
         state.backendReady = false;
         entry = await localMediaRef(item);
+        if (!requireAuthenticated(null, true)) return false;
         setCloudStatus("offline");
       }
     } else {
       entry = await localMediaRef(item);
+      if (!requireAuthenticated(null, true)) return false;
     }
+    if (!requireAuthenticated(null, true)) return false;
     entry.created_at = new Date().toISOString();
     state.photos.unshift(entry);
   }
@@ -1570,6 +1943,7 @@ async function uploadPhotos(items) {
   var compressionMessage = uploadCompressionMessage();
   if (status && compressionMessage) status.textContent = compressionMessage;
   renderAll();
+  return true;
 }
 
 // ========== Render All ==========
@@ -1615,9 +1989,10 @@ function renderPlans() {
   }
   list.innerHTML = state.plans.map(function(p, i) {
     var description = String(p.description || "").trim();
+    var deleteButton = state.authUser ? '<button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button>' : '';
     return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
       '</span><div><h3>' + escapeHtml(p.title || "") + '</h3>' + (description ? '<p>' + escapeHtml(description) + '</p>' : '') +
-      '</div><button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button></article>';
+      '</div>' + deleteButton + '</article>';
   }).join("");
   list.querySelectorAll("[data-delete-plan]").forEach(function(btn) {
     btn.addEventListener("click", function() { deletePlan(parseInt(btn.dataset.deletePlan)); });
@@ -1741,10 +2116,11 @@ function renderRecords() {
   list.innerHTML = records.map(function(r) {
     var originalIndex = r._sourceIndex;
     var viewerItems = viewerMediaItems(r.photos);
+    var recordActions = state.authUser ? ((r.id ? '<button class="story-edit" type="button" data-edit-record-id="' + escapeHtml(String(r.id)) + '" aria-label="编辑记录">编辑</button>' : '') +
+      '<button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button>') : '';
     return '<article class="story-card"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
       escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><div class="story-card-actions">' +
-      (r.id ? '<button class="story-edit" type="button" data-edit-record-id="' + escapeHtml(String(r.id)) + '" aria-label="编辑记录">编辑</button>' : '') +
-      '<button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button></div></div><p class="story-card-description">' +
+      recordActions + '</div></div><p class="story-card-description">' +
       escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
       (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) {
         return mediaElementMarkup(photo, photo.name || r.title || "旅行媒体", false, viewerItems.indexOf(photo));
@@ -1764,7 +2140,7 @@ function renderCapsules() {
   var target = document.querySelector("#time-capsule");
   if (!target) return;
   var capsuleMediaGroups = [];
-  var createButton = '<button type="button" class="button primary" data-new-capsule>写一封给未来的信</button>';
+  var createButton = state.authUser ? '<button type="button" class="button primary" data-new-capsule>写一封给未来的信</button>' : '';
   if (!state.capsules.length) {
     target.innerHTML = '<img class="capsule-mark" src="assets/icons/heart-outline.svg" alt="" /><span class="section-label">Time Capsule</span><h3>留一份惊喜给未来</h3><p class="muted">写下现在想说的话，选一个将来的日子再一起打开。</p>' + createButton;
   } else {
@@ -1775,13 +2151,15 @@ function renderCapsules() {
       var content = view.unlocked ? '<p>' + escapeHtml(view.body || "") + '</p>' + (view.photos.length ? '<div class="capsule-photos">' + view.photos.map(function(photo) {
         return mediaElementMarkup(photo, "胶囊媒体", false, viewerItems.indexOf(photo));
       }).join("") + '</div>' : '') : '<strong class="capsule-countdown">还有 ' + view.remainingDays + ' 天</strong><p class="muted">内容和照片会在 ' + escapeHtml(view.unlock_date || "") + ' 解锁。</p>';
-      return '<article class="capsule-entry"><p class="capsule-meta">封存于 ' + escapeHtml(String(view.created_at || "").slice(0,10)) + '</p><h3>' + escapeHtml(view.title) + '</h3>' + content + '<div class="capsule-actions">' + (view.editable ? '<button type="button" data-edit-capsule="' + index + '">24 小时内可编辑</button>' : '') + '<button type="button" data-delete-capsule="' + index + '">删除</button></div></article>';
+      var capsuleActions = state.authUser ? ((view.editable ? '<button type="button" data-edit-capsule="' + index + '">24 小时内可编辑</button>' : '') + '<button type="button" data-delete-capsule="' + index + '">删除</button>') : '';
+      return '<article class="capsule-entry"><p class="capsule-meta">封存于 ' + escapeHtml(String(view.created_at || "").slice(0,10)) + '</p><h3>' + escapeHtml(view.title) + '</h3>' + content + (capsuleActions ? '<div class="capsule-actions">' + capsuleActions + '</div>' : '') + '</article>';
     }).join("") + createButton;
   }
   target.querySelectorAll(".capsule-photos").forEach(function(group, index) {
     registerMediaViewerGroup(group, capsuleMediaGroups[index]);
   });
-  target.querySelector("[data-new-capsule]").addEventListener("click", function() { editingCapsuleIndex = -1; capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; openPanelById(capsulePanel); });
+  var newCapsuleButton = target.querySelector("[data-new-capsule]");
+  if (newCapsuleButton) newCapsuleButton.addEventListener("click", function() { if (!requireAuthenticated()) return; editingCapsuleIndex = -1; capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; openPanelById(capsulePanel); });
   target.querySelectorAll("[data-edit-capsule]").forEach(function(button) { button.addEventListener("click", function() { editCapsule(parseInt(button.dataset.editCapsule)); }); });
   target.querySelectorAll("[data-delete-capsule]").forEach(function(button) { button.addEventListener("click", function() { deleteCapsule(parseInt(button.dataset.deleteCapsule)); }); });
 }
@@ -1822,12 +2200,13 @@ function renderTodos() {
   list.innerHTML = '<div class="todo-items-grid">' + todoColumns.map(function(column) {
     return '<div class="todo-column">' + column.map(function(entry) {
       var t = entry.todo;
-      var action = t.done ? '标记为未完成' : '标记为已完成';
-      return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span class="todo-text">' + escapeHtml(t.text) +
-        '</span><span class="todo-actions"><button class="todo-toggle" type="button" aria-label="' + action + '：' +
+      var actionLabel = t.done ? '标记为未完成' : '标记为已完成';
+      var todoActions = state.authUser ? '<span class="todo-actions"><button class="todo-toggle" type="button" aria-label="' + actionLabel + '：' +
         escapeHtml(t.text) + '" data-toggle-todo="' + entry.index + '">' + (t.done ? '✓' : '') +
         '</button><button class="todo-delete" type="button" aria-label="删除想做的事：' + escapeHtml(t.text) +
-        '" data-delete-todo="' + entry.index + '"><img src="assets/icons/trash.svg" alt="" /></button></span></div>';
+        '" data-delete-todo="' + entry.index + '"><img src="assets/icons/trash.svg" alt="" /></button></span>' : '';
+      return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span class="todo-text">' + escapeHtml(t.text) +
+        '</span>' + todoActions + '</div>';
     }).join("") + '</div>';
   }).join("") + '</div>';
   if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';

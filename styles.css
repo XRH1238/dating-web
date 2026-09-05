@@ -145,6 +145,124 @@ a {
   color: var(--rose-dark);
 }
 
+.auth-controls {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.auth-controls [hidden] {
+  display: none !important;
+}
+
+.auth-account {
+  max-width: 210px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-button,
+.auth-link-button,
+.auth-dialog-close {
+  border: 0;
+  color: var(--rose-dark);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.auth-button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+}
+
+.auth-button:hover,
+.auth-button:focus-visible {
+  border-color: var(--rose);
+  background: var(--blush);
+}
+
+body[data-authenticated="false"] [data-auth-write] {
+  display: none;
+}
+
+.auth-dialog {
+  width: min(440px, calc(100% - 36px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  background: var(--cream);
+  box-shadow: var(--shadow);
+}
+
+.auth-dialog::backdrop {
+  background: rgba(47, 39, 48, .48);
+  backdrop-filter: blur(3px);
+}
+
+.auth-dialog form {
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+}
+
+.auth-dialog-heading,
+.auth-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.auth-dialog-heading h2 {
+  margin: 5px 0 0;
+  font-size: 26px;
+}
+
+.auth-dialog label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.auth-dialog input {
+  min-height: 46px;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+.auth-dialog-close {
+  align-self: flex-start;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 25px;
+}
+
+.auth-dialog-close:hover,
+.auth-dialog-close:focus-visible {
+  background: var(--blush);
+}
+
+.auth-link-button {
+  padding: 8px 0;
+}
+
 .hero {
   position: relative;
   min-height: 680px;
@@ -2238,7 +2356,22 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  .site-header,
+  .site-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .site-header .nav-links {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .site-header .auth-controls {
+    grid-column: 2;
+    grid-row: 1;
+    margin-left: 0;
+  }
+
   .section-heading {
     align-items: flex-start;
     flex-direction: column;

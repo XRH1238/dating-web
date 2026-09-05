@@ -1,0 +1,2 @@
+[functions.storage-gateway]
+verify_jwt = false

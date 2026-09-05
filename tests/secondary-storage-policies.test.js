@@ -3,48 +3,48 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const sqlPath = path.join(__dirname, '..', 'supabase', 'secondary-storage-public-policies.sql');
+const oldSqlPath = path.join(__dirname, '..', 'supabase', 'secondary-storage-public-policies.sql');
+const sqlPath = path.join(__dirname, '..', 'supabase', 'secondary-storage-gateway-policies.sql');
 
-function createPolicyStatements(sql) {
-  return sql.split(';').map(statement => statement.trim()).filter(statement => /^create\s+policy/i.test(statement));
+function statements(sql) {
+  return sql
+    .replace(/--.*$/gm, '')
+    .split(';')
+    .map(statement => statement.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 }
 
-function assertOnlyExpectedPolicies(sql) {
-  const policies = createPolicyStatements(sql);
+function parseStorageDrop(statement) {
+  const match = statement.match(/^drop policy if exists "([^"]+)" on storage\.objects$/i);
+  return match ? match[1] : null;
+}
 
-  assert.equal(policies.length, 3);
-  assert.deepEqual(policies.map(policy => policy.match(/for\s+(select|insert|delete)/i)[1].toLowerCase()).sort(), [
-    'delete',
-    'insert',
-    'select',
+test('旧的第二 Storage 公开策略脚本已删除', () => {
+  assert.equal(fs.existsSync(oldSqlPath), false);
+});
+
+test('网关策略脚本撤销所有已知的公开读写删策略', () => {
+  assert.equal(fs.existsSync(sqlPath), true, '缺少第二 Storage 网关策略 SQL');
+  const drops = statements(fs.readFileSync(sqlPath, 'utf8')).map(parseStorageDrop).filter(Boolean);
+  assert.deepEqual(drops.sort(), [
+    'public delete love photos bucket',
+    'public read love photos bucket',
+    'public update love photos bucket',
+    'public upload love photos bucket',
   ]);
-  policies.forEach(policy => {
-    assert.match(policy, /on\s+storage\.objects\s+for\s+(select|insert|delete)/i);
-    assert.match(policy, /to\s+anon\s*,\s*authenticated/i);
-    assert.match(policy, /bucket_id\s*=\s*'love-photos'/i);
-    assert.doesNotMatch(policy, /for\s+(all|update)/i);
-    assert.doesNotMatch(policy, /bucket_id\s*(?:!=|<>|=)\s*'(?!love-photos')/i);
-  });
-  assert.match(policies.find(policy => /for\s+insert/i.test(policy)), /with\s+check\s*\(\s*bucket_id\s*=\s*'love-photos'\s*\)/i);
-  policies.filter(policy => /for\s+(select|delete)/i.test(policy)).forEach(policy => {
-    assert.match(policy, /using\s*\(\s*bucket_id\s*=\s*'love-photos'\s*\)/i);
-  });
-  assert.doesNotMatch(sql, /for\s+update/i);
-  assert.doesNotMatch(sql, /public\.love_/i);
-}
-
-test('第二个 Storage 策略仅公开 love-photos 的读取、上传和删除', () => {
-  assert.equal(fs.existsSync(sqlPath), true, '缺少第二个 Storage 策略 SQL');
-  assertOnlyExpectedPolicies(fs.readFileSync(sqlPath, 'utf8'));
 });
 
-test('额外的全表公开策略会被拒绝', () => {
-  const sql = fs.readFileSync(sqlPath, 'utf8') + "\ncreate policy evil on storage.objects for all using (true) with check (true);";
-  assert.throws(() => assertOnlyExpectedPolicies(sql));
-});
-
-test('第二个 Storage 策略可重复执行且明确限制公开角色', () => {
+test('网关策略脚本不创建任何浏览器角色策略', () => {
   const sql = fs.readFileSync(sqlPath, 'utf8');
-  assert.equal((sql.match(/drop policy if exists/gi) || []).length, 3);
-  assert.equal((sql.match(/to\s+anon\s*,\s*authenticated/gi) || []).length, 3);
+  const parsed = statements(sql);
+  assert.equal(parsed.some(statement => /^create\s+policy\b/i.test(statement)), false);
+  assert.equal(parsed.some(statement => /\bto\s+(anon|authenticated)\b/i.test(statement)), false);
+  assert.equal(parsed.some(statement => /\bfor\s+(select|insert|update|delete|all)\b/i.test(statement)), false);
+});
+
+test('网关策略脚本不改变 Bucket 的 Public 标记或其他 schema', () => {
+  const parsed = statements(fs.readFileSync(sqlPath, 'utf8'));
+  assert.equal(parsed.some(statement => /\bstorage\.buckets\b/i.test(statement)), false);
+  assert.equal(parsed.some(statement => /\b(update|insert|delete)\s+(?:from\s+|into\s+)?storage\./i.test(statement)), false);
+  assert.equal(parsed.every(statement => parseStorageDrop(statement) !== null), true);
 });
