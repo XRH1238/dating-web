@@ -55,6 +55,8 @@ function createScriptHarness(overrides = {}) {
     syncPendingRecords: syncPendingRecords,
     uploadPhotos: uploadPhotos,
     handleAuthStateChange: handleAuthStateChange,
+    updateAuthUi: updateAuthUi,
+    saveProfile: typeof saveProfile === 'function' ? saveProfile : undefined,
     afterSuccessfulSave: typeof afterSuccessfulSave === 'function' ? afterSuccessfulSave : undefined,
     trackFormEdits: typeof trackFormEdits === 'function' ? trackFormEdits : undefined,
     submitRecordForm: submitRecordForm,
@@ -137,6 +139,116 @@ test('认证状态控制只读模式并在退出或失效时关闭写面板', ()
   assert.match(script, /function closeWritePanels\([\s\S]*?closePanel\(\)[\s\S]*?closePanelById\(recordPanel\)[\s\S]*?closePanelById\(capsulePanel\)/);
   assert.match(script, /if\s*\(!state\.authUser\)\s*\{[\s\S]*?closeWritePanels\(\)/);
   assert.match(script, /becameAuthenticated\s*&&\s*event\s*!==\s*"TOKEN_REFRESHED"[\s\S]*?await loadRemoteData\(\);/);
+});
+
+test('页头显示用户名和头像而不显示邮箱', () => {
+  const account = { textContent: '' };
+  const profileButton = { hidden: true, setAttribute() {} };
+  const avatar = {
+    textContent: '',
+    style: {},
+    classList: { add() {}, remove() {}, toggle() {} },
+  };
+  const harness = createScriptHarness({ elements: {
+    '#auth-account': account,
+    '#auth-avatar': avatar,
+    '#auth-profile-button': profileButton,
+  }});
+  harness.hooks.setState({ authUser: {
+    id: 'u1', email: 'secret@example.com',
+    user_metadata: { display_name: '小恋', avatar_url: 'https://cdn.example/avatar.jpg' },
+  }});
+
+  harness.hooks.updateAuthUi();
+
+  assert.equal(account.textContent, '小恋');
+  assert.equal(profileButton.hidden, false);
+  assert.equal(account.textContent.includes('@'), false);
+  assert.match(avatar.style.backgroundImage, /avatar\.jpg/);
+});
+
+test('更换头像按上传、更新资料、删除旧文件的顺序执行', async () => {
+  const events = [];
+  const harness = createScriptHarness();
+  harness.hooks.setState({
+    authUser: { id: 'u1', user_metadata: { avatar_path: 'avatars/u1/old.jpg' } },
+    authClient: { async updateProfile(data) { events.push(['profile', data.avatar_path]); } },
+    client: {
+      async upload(_bucket, path) { events.push(['upload', path]); },
+      getPublicUrl(_bucket, path) { return 'https://storage.example/' + path; },
+      async removeObjects(_bucket, paths) { events.push(['delete', paths[0]]); },
+    },
+  });
+
+  await harness.hooks.saveProfile({ displayName: '新名字', avatarBlob: new Blob(['avatar'], { type: 'image/jpeg' }) });
+
+  assert.deepEqual(events.map(item => item[0]), ['upload', 'profile', 'delete']);
+});
+
+test('Auth 更新失败时回收新头像且不删除旧头像', async () => {
+  const removed = [];
+  let uploadedPath = '';
+  const harness = createScriptHarness();
+  harness.hooks.setState({
+    authUser: { id: 'u1', user_metadata: { avatar_path: 'avatars/u1/old.jpg' } },
+    authClient: { async updateProfile() { throw new Error('资料更新失败'); } },
+    client: {
+      async upload(_bucket, path) { uploadedPath = path; },
+      getPublicUrl(_bucket, path) { return 'https://storage.example/' + path; },
+      async removeObjects(_bucket, paths) { removed.push(...paths); },
+    },
+  });
+
+  await assert.rejects(
+    harness.hooks.saveProfile({ displayName: '新名字', avatarBlob: new Blob(['avatar'], { type: 'image/jpeg' }) }),
+    /资料更新失败/
+  );
+  assert.deepEqual(removed, [uploadedPath]);
+  assert.notEqual(uploadedPath, 'avatars/u1/old.jpg');
+});
+
+test('只修改用户名时保留原头像且不调用 Storage', async () => {
+  let saved;
+  let storageCalls = 0;
+  const harness = createScriptHarness();
+  harness.hooks.setState({
+    authUser: { id: 'u1', user_metadata: { avatar_url: 'https://storage.example/old.jpg', avatar_path: 'avatars/u1/old.jpg' } },
+    authClient: { async updateProfile(data) { saved = data; } },
+    client: {
+      async upload() { storageCalls += 1; },
+      async removeObjects() { storageCalls += 1; },
+    },
+  });
+
+  await harness.hooks.saveProfile({ displayName: '只改名字', avatarBlob: null });
+
+  assert.equal(storageCalls, 0);
+  assert.deepEqual({ ...saved }, {
+    display_name: '只改名字',
+    avatar_url: 'https://storage.example/old.jpg',
+    avatar_path: 'avatars/u1/old.jpg',
+  });
+});
+
+test('新头像上传失败时不更新资料或删除旧头像', async () => {
+  let profileCalls = 0;
+  let deleteCalls = 0;
+  const harness = createScriptHarness();
+  harness.hooks.setState({
+    authUser: { id: 'u1', user_metadata: { avatar_path: 'avatars/u1/old.jpg' } },
+    authClient: { async updateProfile() { profileCalls += 1; } },
+    client: {
+      async upload() { throw new Error('上传失败'); },
+      async removeObjects() { deleteCalls += 1; },
+    },
+  });
+
+  await assert.rejects(
+    harness.hooks.saveProfile({ displayName: '新名字', avatarBlob: new Blob(['avatar'], { type: 'image/jpeg' }) }),
+    /上传失败/
+  );
+  assert.equal(profileCalls, 0);
+  assert.equal(deleteCalls, 0);
 });
 
 test('所有数据库与媒体写入底层函数都先检查登录状态', () => {

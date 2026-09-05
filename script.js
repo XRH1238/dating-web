@@ -81,6 +81,11 @@ const authDialog = document.querySelector("#auth-dialog");
 const authLoginForm = document.querySelector("#auth-login-form");
 const passwordRecoveryDialog = document.querySelector("#password-recovery-dialog");
 const passwordRecoveryForm = document.querySelector("#password-recovery-form");
+const profileDialog = document.querySelector("#profile-dialog");
+const profileForm = document.querySelector("#profile-form");
+const profileAvatarInput = document.querySelector("#profile-avatar-input");
+const avatarCropStage = document.querySelector("#avatar-crop-stage");
+const avatarZoomLabel = document.querySelector("#avatar-zoom-label");
 const planDateState = {
   active: "start",
   start: { parts: { year: "", month: "", day: "" }, iso: "" },
@@ -113,6 +118,7 @@ const formEditRevisions = new WeakMap();
 const trackedForms = new WeakSet();
 let uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
 const mediaViewerCollections = new WeakMap();
+let avatarCropper = null;
 
 // Local SVG map state
 let chinaMap = null;
@@ -252,19 +258,92 @@ function updateAuthUi() {
   document.body.dataset.authenticated = state.authUser ? "true" : "false";
   var loginButton = document.querySelector("#auth-login-button");
   var account = document.querySelector("#auth-account");
+  var avatar = document.querySelector("#auth-avatar");
+  var profileButton = document.querySelector("#auth-profile-button");
   var logoutButton = document.querySelector("#auth-logout-button");
+  var profile = authProfile(state.authUser);
   if (loginButton) loginButton.hidden = !!state.authUser;
   if (account) {
-    account.hidden = !state.authUser;
-    account.textContent = state.authUser ? (state.authUser.email || "已登录") : "";
+    account.textContent = state.authUser ? (profile.displayName || "已登录") : "";
+  }
+  if (profileButton) {
+    profileButton.hidden = !state.authUser;
+    if (state.authUser) profileButton.setAttribute("aria-label", "个人资料：" + (profile.displayName || "已登录"));
+  }
+  if (avatar) {
+    avatar.style.backgroundImage = profile.avatarUrl ? "url(" + JSON.stringify(profile.avatarUrl) + ")" : "";
+    avatar.textContent = profile.avatarUrl ? "" : "♥";
+    avatar.classList.toggle("auth-avatar-placeholder", !profile.avatarUrl);
   }
   if (logoutButton) logoutButton.hidden = !state.authUser;
+}
+
+function authProfile(user) {
+  var metadata = user && user.user_metadata && typeof user.user_metadata === "object" ? user.user_metadata : {};
+  return {
+    displayName: String(metadata.display_name || "").trim(),
+    avatarUrl: String(metadata.avatar_url || ""),
+    avatarPath: String(metadata.avatar_path || ""),
+  };
+}
+
+function safeProfileUserId(value) {
+  return String(value || "").replace(/[^A-Za-z0-9_-]/g, "");
+}
+
+function isOwnedAvatarPath(path, userId) {
+  return Boolean(path) && String(path).indexOf("avatars/" + safeProfileUserId(userId) + "/") === 0;
+}
+
+async function saveProfile(input) {
+  if (!requireAuthenticated()) throw new Error("请先登录");
+  var displayName = String(input && input.displayName || "").trim();
+  if (!displayName || displayName.length > 32) throw new Error("用户名需为 1–32 个字符");
+  if (!state.authClient || typeof state.authClient.updateProfile !== "function") throw new Error("资料服务暂不可用");
+
+  var operationGeneration = authMutationGeneration;
+  var targetAuthClient = state.authClient;
+  var targetClient = state.client;
+  var userId = safeProfileUserId(state.authUser.id);
+  if (!userId) throw new Error("当前账号无法保存头像");
+  var previous = authProfile(state.authUser);
+  var next = { display_name: displayName, avatar_url: previous.avatarUrl, avatar_path: previous.avatarPath };
+  var uploadedPath = "";
+  if (input && input.avatarBlob) {
+    if (!targetClient || typeof targetClient.upload !== "function") throw new Error("头像存储服务暂不可用");
+    uploadedPath = "avatars/" + userId + "/" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".jpg";
+    await targetClient.upload(storageBucket, uploadedPath, input.avatarBlob);
+    next.avatar_path = uploadedPath;
+    next.avatar_url = targetClient.getPublicUrl(storageBucket, uploadedPath);
+  }
+
+  if (operationGeneration !== authMutationGeneration || !state.authUser || safeProfileUserId(state.authUser.id) !== userId) {
+    if (uploadedPath && targetClient && typeof targetClient.removeObjects === "function") {
+      try { await targetClient.removeObjects(storageBucket, [uploadedPath]); } catch (_) {}
+    }
+    throw new Error("登录状态已变更，请重新保存");
+  }
+
+  try {
+    await targetAuthClient.updateProfile(next);
+  } catch (error) {
+    if (uploadedPath && targetClient && typeof targetClient.removeObjects === "function") {
+      try { await targetClient.removeObjects(storageBucket, [uploadedPath]); } catch (_) {}
+    }
+    throw error;
+  }
+
+  if (uploadedPath && isOwnedAvatarPath(previous.avatarPath, userId) && previous.avatarPath !== uploadedPath) {
+    try { await targetClient.removeObjects(storageBucket, [previous.avatarPath]); }
+    catch (_) { showCloudNotice("资料已保存，但旧头像暂未清理。", true); }
+  }
 }
 
 function closeWritePanels() {
   closePanel();
   closePanelById(recordPanel);
   closePanelById(capsulePanel);
+  closeProfileDialog();
 }
 
 function showDialog(dialog) {
@@ -285,6 +364,27 @@ function showAuthDialog(message) {
   showDialog(authDialog);
   var email = authLoginForm && authLoginForm.elements.email;
   if (email) email.focus();
+}
+
+function openProfileDialog() {
+  if (!requireAuthenticated()) return;
+  var profile = authProfile(state.authUser);
+  if (profileForm && profileForm.elements.display_name) profileForm.elements.display_name.value = profile.displayName;
+  if (profileAvatarInput) profileAvatarInput.value = "";
+  if (avatarCropper) avatarCropper.reset();
+  if (avatarCropStage) avatarCropStage.hidden = true;
+  if (avatarZoomLabel) avatarZoomLabel.hidden = true;
+  var status = document.querySelector("#profile-status");
+  if (status) status.textContent = "";
+  showDialog(profileDialog);
+  if (profileForm && profileForm.elements.display_name) profileForm.elements.display_name.focus();
+}
+
+function closeProfileDialog() {
+  closeDialog(profileDialog);
+  if (avatarCropper) avatarCropper.reset();
+  if (avatarCropStage) avatarCropStage.hidden = true;
+  if (avatarZoomLabel) avatarZoomLabel.hidden = true;
 }
 
 function requireAuthenticated(message, silent) {
@@ -367,12 +467,21 @@ function bindMediaDropzone(name, input, receiveFiles) {
 }
 
 function bindEvents() {
-  [form, todoForm, recordForm, capsuleForm, authLoginForm, passwordRecoveryForm].forEach(trackFormEdits);
+  [form, todoForm, recordForm, capsuleForm, authLoginForm, passwordRecoveryForm, profileForm].forEach(trackFormEdits);
   bindMediaViewerTriggers();
   var authLoginButton = document.querySelector("#auth-login-button");
   var authLogoutButton = document.querySelector("#auth-logout-button");
+  var authProfileButton = document.querySelector("#auth-profile-button");
   var forgotPasswordButton = document.querySelector("#auth-forgot-password");
+  if (window.AvatarCropper && avatarCropStage && profileAvatarInput) {
+    avatarCropper = window.AvatarCropper.createAvatarCropper({
+      canvas: document.querySelector("#avatar-crop-canvas"),
+      zoomInput: document.querySelector("#avatar-zoom"),
+      document: document,
+    });
+  }
   if (authLoginButton) authLoginButton.addEventListener("click", function() { showAuthDialog(""); });
+  if (authProfileButton) authProfileButton.addEventListener("click", openProfileDialog);
   if (authLogoutButton) authLogoutButton.addEventListener("click", async function() {
     if (!state.authClient) return;
     try { await state.authClient.signOut(); }
@@ -380,6 +489,49 @@ function bindEvents() {
   });
   document.querySelectorAll("[data-auth-close]").forEach(function(button) {
     button.addEventListener("click", function() { closeDialog(document.querySelector("#" + button.dataset.authClose)); });
+  });
+  document.querySelectorAll("[data-close-profile]").forEach(function(button) {
+    button.addEventListener("click", closeProfileDialog);
+  });
+  if (profileDialog) profileDialog.addEventListener("close", function() {
+    if (avatarCropper) avatarCropper.reset();
+    if (avatarCropStage) avatarCropStage.hidden = true;
+    if (avatarZoomLabel) avatarZoomLabel.hidden = true;
+  });
+  if (profileAvatarInput) profileAvatarInput.addEventListener("change", async function() {
+    var status = document.querySelector("#profile-status");
+    var file = profileAvatarInput.files && profileAvatarInput.files[0];
+    if (!file || !avatarCropper) return;
+    if (status) status.textContent = "正在读取头像...";
+    try {
+      await avatarCropper.loadFile(file);
+      avatarCropStage.hidden = false;
+      avatarZoomLabel.hidden = false;
+      if (status) status.textContent = "拖动图片选择区域，也可以缩放。";
+    } catch (error) {
+      avatarCropStage.hidden = true;
+      avatarZoomLabel.hidden = true;
+      if (status) status.textContent = String(error && error.message || "头像读取失败");
+    }
+  });
+  if (profileForm) profileForm.addEventListener("submit", async function(event) {
+    event.preventDefault();
+    if (!requireAuthenticated()) return;
+    var status = document.querySelector("#profile-status");
+    var submit = profileForm.querySelector('[type="submit"]');
+    var displayName = String(profileForm.elements.display_name.value || "").trim();
+    submit.disabled = true;
+    if (status) status.textContent = "正在保存...";
+    try {
+      var avatarBlob = avatarCropper && avatarCropper.hasImage() ? await avatarCropper.toBlob() : null;
+      await saveProfile({ displayName: displayName, avatarBlob: avatarBlob });
+      closeProfileDialog();
+      showCloudNotice("个人资料已保存。", false);
+    } catch (error) {
+      if (status) status.textContent = String(error && error.message || "资料保存失败，请稍后重试。");
+    } finally {
+      submit.disabled = false;
+    }
   });
   if (authLoginForm) authLoginForm.addEventListener("submit", async function(event) {
     event.preventDefault();
