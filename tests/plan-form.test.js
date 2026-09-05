@@ -38,6 +38,13 @@ test('计划日期拥有独立状态和事件入口', () => {
   assert.match(script, /function changePlanCalendarMonth\(offset\)/);
 });
 
+test('计划开始日期首次填完或选中后自动转到结束日期', () => {
+  assert.match(script, /function updatePlanDateFromManual\(part, value\)[\s\S]*?var previousIso = entry\.iso;[\s\S]*?advancePlanDateTargetIfNeeded\(previousIso\)[\s\S]*?focusPlanEndDateInput\(\)/);
+  assert.match(script, /function selectPlanCalendarDay\(day\)[\s\S]*?var previousIso = entry\.iso;[\s\S]*?advancePlanDateTargetIfNeeded\(previousIso\)[\s\S]*?focusPlanEndDateInput\(\)/);
+  assert.match(script, /function advancePlanDateTargetIfNeeded\(previousIso\)[\s\S]*?RecordDatePicker\.shouldAdvanceToEnd\(planDateState\.active, previousIso, planDateState\.start\.iso\)[\s\S]*?planDateState\.active = "end"/);
+  assert.match(script, /function focusPlanEndDateInput\(\)[\s\S]*?data-plan-date-part="year"[\s\S]*?\.focus\(\)/);
+});
+
 test('计划提交先校验日期范围并保持原有序列化格式', () => {
   assert.match(script, /function validatePlanDateRange\(\)/);
   assert.match(script, /MapLabelLayout\.serializeDateRange\(planDateState\.start\.iso, planDateState\.end\.iso\)/);

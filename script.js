@@ -622,6 +622,7 @@ function activatePlanDateTarget(target) {
 
 function updatePlanDateFromManual(part, value) {
   var entry = planDateState[planDateState.active];
+  var previousIso = entry.iso;
   entry.parts[part] = value;
   var year = Number(entry.parts.year), month = Number(entry.parts.month);
   if (entry.parts.year && entry.parts.month && year >= 1 && year <= 9999 && month >= 1 && month <= 12) {
@@ -631,15 +632,31 @@ function updatePlanDateFromManual(part, value) {
   var validation = window.RecordDatePicker.validateParts(entry.parts);
   entry.iso = validation.valid && validation.complete ? window.RecordDatePicker.toIsoDate(entry.parts) : "";
   setPlanDateStatus(validation.valid ? "" : validation.message);
+  var advanced = advancePlanDateTargetIfNeeded(previousIso);
   renderPlanDatePicker();
+  if (advanced) focusPlanEndDateInput();
 }
 
 function selectPlanCalendarDay(day) {
   var entry = planDateState[planDateState.active];
+  var previousIso = entry.iso;
   entry.parts = { year: String(planDateState.viewYear), month: String(planDateState.viewMonth), day: String(day) };
   entry.iso = window.RecordDatePicker.toIsoDate(entry.parts);
   setPlanDateStatus("");
+  var advanced = advancePlanDateTargetIfNeeded(previousIso);
   renderPlanDatePicker();
+  if (advanced) focusPlanEndDateInput();
+}
+
+function advancePlanDateTargetIfNeeded(previousIso) {
+  if (!window.RecordDatePicker.shouldAdvanceToEnd(planDateState.active, previousIso, planDateState.start.iso)) return false;
+  planDateState.active = "end";
+  return true;
+}
+
+function focusPlanEndDateInput() {
+  var yearInput = planDatePicker && planDatePicker.querySelector('[data-plan-date-part="year"]');
+  if (yearInput) yearInput.focus();
 }
 
 function changePlanCalendarMonth(offset) {
