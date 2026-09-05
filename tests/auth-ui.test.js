@@ -94,6 +94,19 @@ test('页面先加载 Auth 客户端并提供无注册入口的登录与恢复�
   assert.doesNotMatch(html, /注册账号|创建账号|立即注册/);
 });
 
+test('登录后页头提供头像资料入口和裁剪弹窗', () => {
+  assert.match(html, /id="auth-profile-button"/);
+  assert.match(html, /id="auth-avatar"/);
+  assert.match(html, /<dialog[^>]*id="profile-dialog"[^>]*aria-labelledby="profile-dialog-title"/);
+  assert.match(html, /name="display_name"[^>]*maxlength="32"/);
+  assert.match(html, /id="profile-avatar-input"[^>]*type="file"[^>]*accept="[^"]*image\/jpeg/);
+  assert.match(html, /id="avatar-crop-canvas"/);
+  assert.match(html, /id="avatar-zoom"[^>]*type="range"/);
+  assert.ok(html.indexOf('avatar-cropper.js') < html.indexOf('script.js'));
+  assert.match(styles, /\.auth-avatar\s*\{[^}]*border-radius:\s*50%/s);
+  assert.match(styles, /\.avatar-crop-stage\s*\{[^}]*touch-action:\s*none/s);
+});
+
 test('所有静态写入口都标记为登录后可用', () => {
   assert.match(html, /data-open-panel="plan"[^>]*data-auth-write|data-auth-write[^>]*data-open-panel="plan"/);
   assert.match(html, /data-open-record[^>]*data-auth-write|data-auth-write[^>]*data-open-record/);
