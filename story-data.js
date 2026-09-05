@@ -1,8 +1,8 @@
 (function(root, factory) {
-  var api = factory();
+  var api = factory(typeof module === "object" && module.exports ? require('./map-label-layout.js') : root.MapLabelLayout);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.StoryData = api;
-})(typeof window !== "undefined" ? window : globalThis, function() {
+})(typeof window !== "undefined" ? window : globalThis, function(mapLabelLayout) {
   function asArray(value) {
     if (Array.isArray(value)) return value;
     if (typeof value === "string") {
@@ -33,9 +33,17 @@
 
   function summarizeRecords(records) {
     var normalized = (records || []).map(normalizeRecord);
-    var cities = new Set(normalized.map(function(item) { return item.city.trim(); }).filter(Boolean));
+    var cities = new Set();
+    var trips = new Set();
+    normalized.forEach(function(item, index) {
+      var city = mapLabelLayout.canonicalCityName(item.city);
+      var range = mapLabelLayout.parseDateRange(item.date);
+      if (city) cities.add(city);
+      // Incomplete legacy records cannot establish that two journeys are the same.
+      trips.add(city && range.valid ? JSON.stringify([city, range.start, range.end]) : index);
+    });
     return {
-      trips: normalized.length,
+      trips: trips.size,
       cities: cities.size,
       photos: normalized.reduce(function(total, item) { return total + item.photos.length; }, 0),
     };
