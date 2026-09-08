@@ -2940,6 +2940,7 @@ textarea {
 
 .gallery-delete:hover { background: var(--rose-dark); }
 .gallery-delete:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.gallery-delete:disabled { opacity: .58; cursor: wait; }
 
 .gallery-grid .media-viewer-trigger img,
 .gallery-grid > figure > video {

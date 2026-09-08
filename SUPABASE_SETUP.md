@@ -5,7 +5,7 @@
 ## 架构与边界
 
 - 主项目 `ueqlgutndwkfuffzkcxo`：唯一的 Auth、Database 和 Edge Function。五张业务表 `love_plans`、`love_records`、`love_todos`、`love_photos`、`love_capsules` 全部留在这里。
-- 第二项目 `msrbqgorhjbzxomexzap`：仅使用 Storage 的 `love-photos`，不复制账号或业务表。这是两个 Supabase 项目，不是两个业务数据库；以后增加项目也只为扩充存储，当前网关仅启用 `secondary`，没有自动轮换。
+- 第二项目 `msrbqgorhjbzxomexzap`：仅使用 Storage 的 `love-photos`，不复制账号或业务表。这是两个 Supabase 项目，不是两个业务数据库；以后增加项目也只为扩充存储。当前网关上传仅使用 `secondary`，删除可按已有 URL 路由到 `primary` 或 `secondary`，没有自动轮换。
 - 网站公开可读，只有主项目登录用户可以写入。所有手动添加的账号权限相同，可修改共享内容；没有按账号隔离数据。
 - Bucket 保持 Public：知道公开 URL 的人仍能 GET 媒体。本次限制写入、删除及列表访问，不提供媒体隐私保护。旧 URL 不变，已有文件不迁移、不删除。
 - 网页只保存 publishable key 和用户会话。服务端 Storage secret 只放在主项目 Edge Function 的 Secrets 中。

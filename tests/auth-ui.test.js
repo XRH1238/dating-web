@@ -277,6 +277,7 @@ test('相册删除按钮只为登录用户渲染并使用现有垃圾桶图标',
   assert.match(script, /state\.authUser\s*\?[^;]*data-delete-gallery-photo/);
   assert.match(script, /data-delete-gallery-photo[^>]*>[\s\S]*?assets\/icons\/trash\.svg/);
   assert.match(styles, /\.gallery-delete/);
+  assert.match(script, /deleteDisabled\s*=\s*deletingGalleryPhotos\.has\(deleteKey\)\s*\?\s*" disabled/);
 });
 
 test('相册删除先删数据库，再按照片 URL 清理两个 Storage', async () => {
@@ -293,7 +294,7 @@ test('相册删除先删数据库，再按照片 URL 清理两个 Storage', asyn
     authUser: { id: 'u1' }, backendReady: true,
     photos: [{ id: 'p1', name: '回忆', url: 'old', motion_url: 'new' }],
     client: {
-      async remove(table, id) { events.push(['database', table, id]); },
+      async removeOne(table, id) { events.push(['database', table, id]); return { id }; },
       async removeObjects(_bucket, paths, backend) { events.push(['storage', backend, paths]); },
     },
   });
@@ -321,7 +322,7 @@ test('相册数据库删除失败时保留照片且不清理 Storage', async () 
     authUser: { id: 'u1' }, backendReady: true,
     photos: [{ id: 'p1', name: '回忆', url: 'old' }],
     client: {
-      async remove() { throw new Error('database failed'); },
+      async removeOne() { throw new Error('database failed'); },
       async removeObjects() { storageCalls += 1; },
     },
   });
@@ -344,13 +345,44 @@ test('相册 Storage 清理失败时记录仍保持删除', async () => {
     authUser: { id: 'u1' }, backendReady: true,
     photos: [{ id: 'p1', name: '回忆', url: 'new' }],
     client: {
-      async remove() {},
+      async removeOne(_table, id) { return { id }; },
       async removeObjects() { throw new Error('storage failed'); },
     },
   });
 
   assert.equal(await harness.hooks.deleteGalleryPhoto(0), true);
   assert.equal(harness.hooks.getState().photos.length, 0);
+});
+
+test('相册删除按记录 ID 防止重复请求并在列表重排后移除正确照片', async () => {
+  const firstPhoto = { id: 'p1', name: '第一张', url: 'one' };
+  const secondPhoto = { id: 'p2', name: '第二张', url: 'two' };
+  let removeCalls = 0;
+  let harness;
+  harness = createScriptHarness({ window: {
+    StorageObjectRef: {
+      collectMediaTargets() { return { primary: [], secondary: [], unresolved: true }; },
+    },
+  }});
+  harness.hooks.setConfirmAction(async () => true);
+  harness.hooks.setState({
+    authUser: { id: 'u1' }, backendReady: true, photos: [firstPhoto, secondPhoto],
+    client: {
+      async removeOne(_table, id) {
+        removeCalls += 1;
+        harness.hooks.setState({ photos: [secondPhoto, { ...firstPhoto }] });
+        return { id };
+      },
+      async removeObjects() {},
+    },
+  });
+
+  const firstDelete = harness.hooks.deleteGalleryPhoto(0);
+  const duplicateDelete = harness.hooks.deleteGalleryPhoto(0);
+  assert.equal(await duplicateDelete, false);
+  assert.equal(await firstDelete, true);
+  assert.equal(removeCalls, 1);
+  assert.deepEqual(harness.hooks.getState().photos.map(photo => photo.id), ['p2']);
 });
 
 test('相册云端上传立即保留记录 ID，上传后无需刷新即可删除', async () => {

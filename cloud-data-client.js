@@ -241,6 +241,19 @@
           return parse(response);
         });
       },
+      removeOne: async function(table, id) {
+        return withTimeout(async function(signal) {
+          var response = await requestWithSignal(baseUrl + "/rest/v1/" + safeTable(table) + "?id=eq." + encodeURIComponent(id), {
+            method: "DELETE",
+            headers: await databaseHeaders({ Prefer: "return=representation" }, true),
+          }, signal);
+          var rows = await parse(response);
+          if (!Array.isArray(rows) || rows.length !== 1 || !rows[0] || String(rows[0].id) !== String(id)) {
+            throw new Error("云端记录未删除");
+          }
+          return rows[0];
+        });
+      },
       upload: async function(bucket, path, file) {
         bucket = safeBucket(bucket);
         path = safePath(path);

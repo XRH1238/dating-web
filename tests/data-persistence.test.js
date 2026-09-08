@@ -312,6 +312,27 @@ test('Storage 文件可以按路径批量删除', async () => {
   assert.equal(calls[0].options.headers.Authorization, undefined);
 });
 
+test('精确删除只有返回目标记录时才视为成功', async () => {
+  const responses = [
+    [{ id: 'photo-1' }],
+    [],
+  ];
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://example.supabase.co',
+    key: 'publishable-key',
+    allowAnonymousWrites: true,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return JSON.stringify(responses.shift()); } };
+    },
+  });
+
+  assert.deepEqual(await client.removeOne('love_photos', 'photo-1'), { id: 'photo-1' });
+  await assert.rejects(() => client.removeOne('love_photos', 'photo-1'), /记录未删除/);
+  assert.equal(calls[0].options.headers.Prefer, 'return=representation');
+});
+
 test('网关签名上传使用主 JWT，并以不带凭据的 FormData PUT 上传 Blob', async () => {
   const calls = [];
   const file = new Blob(['image-data'], { type: 'image/jpeg' });
