@@ -94,7 +94,7 @@ alter table public.love_plans add column if not exists segments jsonb;
 }
 ```
 
-网关运行于主项目，平台提供 `SUPABASE_URL` 和 `SUPABASE_ANON_KEY`；可选 `SUPABASE_PUBLISHABLE_KEY` 优先用于主项目身份验证。不要把这些主项目变量改成第二项目。函数从 allowlist 选 `secondary`，只允许固定 Bucket 和安全相对路径，不允许客户端传入任意后端密钥或地址。
+网关运行于主项目，平台提供 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 和仅供函数使用的 `SUPABASE_SERVICE_ROLE_KEY`；可选 `SUPABASE_PUBLISHABLE_KEY` 优先用于主项目身份验证。不要把这些主项目变量改成第二项目。新上传仍只允许 secondary；删除允许 primary 和 secondary，以便相册删除旧、新媒体。两者都只允许固定 Bucket 和安全相对路径，浏览器不能传入任意后端密钥或地址。
 
 [supabase/config.toml](supabase/config.toml) 的 `verify_jwt = false` 关闭平台前置 JWT 检查，使请求可进入函数处理 CORS；这不等于公开授权。每个业务请求仍须携带主项目用户 JWT，并由函数的 `getUser(token)` 向主 Auth 服务验证。不要删除此校验，也不要把 publishable key 当作用户 Bearer。文件签名后由浏览器直传第二 Storage，不通过函数转发大文件；签名禁止覆盖已有对象。参考 [函数部署](https://supabase.com/docs/guides/functions/deploy) 和 [函数授权头](https://supabase.com/docs/guides/functions/auth-headers)。
 
@@ -110,7 +110,7 @@ alter table public.love_plans add column if not exists segments jsonb;
    ```
 
    部署入口为 `supabase/functions/storage-gateway/index.ts`，配置随仓库读取；确认云端 `verify_jwt` 设置与仓库一致。不要为了部署把 secret 放进命令参数。
-3. **验证网关**：在本地登录版本使用专门测试文件和新路径，确认无用户 JWT 的 `sign-upload` / `delete` 返回 401；登录主账号后签发上传、直传、公开 GET 及删除刚上传测试对象成功。请求只用 `backend: secondary`、`bucket: love-photos`；绝不拿已有照片路径做删除测试。此时不要撤销旧策略。
+3. **验证网关**：在本地登录版本使用专门测试文件和新路径，确认无用户 JWT 的 `sign-upload` / `delete` 返回 401；登录主账号后，确认 `sign-upload` 只接受 `backend: secondary`，并用临时测试对象分别验证 `backend: primary` 与 `backend: secondary` 删除。Bucket 固定为 `love-photos`；绝不拿已有照片路径做删除测试。此时不要撤销旧策略。
 4. **部署前端**：发布整套登录版本（含 `auth-client.js`、`cloud-data-client.js`），检查登录/退出/恢复密码、匿名浏览、登录后写入、网关请求路由均正常。不要只发布隐藏按钮而遗漏服务端配置。在完成接下来的策略收紧前，旧匿名 API 权限仍存在，这一过渡期不算完成鉴权。
 5. **主数据库策略**：仅在主项目执行下节指定 SQL。立即验证匿名 SELECT 可用、匿名 INSERT / UPDATE / DELETE 被拒绝，而登录账号五类写操作成功。
 6. **第二 Storage 策略**：仅在第二项目执行下节指定 SQL，最后撤销浏览器角色的旧列表/写入/删除权限。再次验证匿名直传、列表和删除被拒绝，登录后的网关签名上传和删除仍正常，已知公开 URL GET 不受影响。

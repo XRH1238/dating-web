@@ -158,7 +158,8 @@ export async function handleStorageGateway(request: Request, deps: GatewayDeps):
       return errorResponse(request, 400, "invalid_paths", "Every object path must be safe and unique");
     }
     try {
-      await deps.removeObjects(body.backend, FIXED_BUCKET, body.paths);
+      const deleteBackend = body.backend === "primary" ? "primary" : "secondary";
+      await deps.removeObjects(deleteBackend, FIXED_BUCKET, body.paths);
       return jsonResponse(request, 200, { deleted: body.paths.length });
     } catch (_) {
       return errorResponse(request, 502, "storage_error", "Storage operation failed");

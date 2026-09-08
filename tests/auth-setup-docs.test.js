@@ -39,6 +39,7 @@ test('gateway secret example is parseable, placeholder-only and matches adapter 
   assert.equal(config.secondary.bucket, 'love-photos');
   assert.equal(config.secondary.secretKey, '<SECONDARY_SB_SECRET_KEY>');
   for (const word of ['STORAGE_BACKENDS_JSON', 'verify_jwt = false', 'getUser', 'publishable', 'anon', 'service_role', 'sb_secret_', '前端', 'Git']) assert.ok(gateway.includes(word), word);
+  for (const word of ['新上传仍只允许 secondary', '删除允许 primary 和 secondary', 'SUPABASE_SERVICE_ROLE_KEY']) assert.ok(gateway.includes(word), word);
   assert.doesNotMatch(doc, /sb_secret_[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/);
 });
 

@@ -57,6 +57,8 @@ function createScriptHarness(overrides = {}) {
     handleAuthStateChange: handleAuthStateChange,
     updateAuthUi: updateAuthUi,
     saveProfile: typeof saveProfile === 'function' ? saveProfile : undefined,
+    deleteGalleryPhoto: typeof deleteGalleryPhoto === 'function' ? deleteGalleryPhoto : undefined,
+    setConfirmAction: function(next) { confirmAction = next; },
     afterSuccessfulSave: typeof afterSuccessfulSave === 'function' ? afterSuccessfulSave : undefined,
     trackFormEdits: typeof trackFormEdits === 'function' ? trackFormEdits : undefined,
     submitRecordForm: submitRecordForm,
@@ -257,6 +259,7 @@ test('所有数据库与媒体写入底层函数都先检查登录状态', () =>
     'saveRecord', 'uploadDataUrlResource', 'uploadMediaItem', 'removeRecordMedia',
     'submitRecordForm', 'deleteRecord', 'saveCapsule', 'submitCapsuleForm',
     'deleteCapsule', 'saveTodo', 'toggleTodo', 'deleteTodo', 'uploadPhotos',
+    'deleteGalleryPhoto',
   ].forEach(name => assert.match(script, functionStartsWithGuard(name), `${name} 缺少底层登录守卫`));
 });
 
@@ -270,6 +273,109 @@ test('动态计划、记录、Todo 和胶囊写控件只为登录用户渲染', 
   assert.match(script, /state\.authUser\s*\?[\s\S]*?data-delete-todo/);
 });
 
+test('相册删除按钮只为登录用户渲染并使用现有垃圾桶图标', () => {
+  assert.match(script, /state\.authUser\s*\?[^;]*data-delete-gallery-photo/);
+  assert.match(script, /data-delete-gallery-photo[^>]*>[\s\S]*?assets\/icons\/trash\.svg/);
+  assert.match(styles, /\.gallery-delete/);
+});
+
+test('相册删除先删数据库，再按照片 URL 清理两个 Storage', async () => {
+  const events = [];
+  const harness = createScriptHarness({ window: {
+    StorageObjectRef: {
+      collectMediaTargets() {
+        return { primary: ['records/old.jpg'], secondary: ['records/new.mov'], unresolved: false };
+      },
+    },
+  }});
+  harness.hooks.setConfirmAction(async () => true);
+  harness.hooks.setState({
+    authUser: { id: 'u1' }, backendReady: true,
+    photos: [{ id: 'p1', name: '回忆', url: 'old', motion_url: 'new' }],
+    client: {
+      async remove(table, id) { events.push(['database', table, id]); },
+      async removeObjects(_bucket, paths, backend) { events.push(['storage', backend, paths]); },
+    },
+  });
+
+  assert.equal(await harness.hooks.deleteGalleryPhoto(0), true);
+  assert.deepEqual(events, [
+    ['database', 'love_photos', 'p1'],
+    ['storage', 'primary', ['records/old.jpg']],
+    ['storage', 'secondary', ['records/new.mov']],
+  ]);
+  assert.equal(harness.hooks.getState().photos.length, 0);
+});
+
+test('相册数据库删除失败时保留照片且不清理 Storage', async () => {
+  let storageCalls = 0;
+  const harness = createScriptHarness({ window: {
+    StorageObjectRef: {
+      collectMediaTargets() {
+        return { primary: ['records/old.jpg'], secondary: [], unresolved: false };
+      },
+    },
+  }});
+  harness.hooks.setConfirmAction(async () => true);
+  harness.hooks.setState({
+    authUser: { id: 'u1' }, backendReady: true,
+    photos: [{ id: 'p1', name: '回忆', url: 'old' }],
+    client: {
+      async remove() { throw new Error('database failed'); },
+      async removeObjects() { storageCalls += 1; },
+    },
+  });
+
+  assert.equal(await harness.hooks.deleteGalleryPhoto(0), false);
+  assert.equal(harness.hooks.getState().photos.length, 1);
+  assert.equal(storageCalls, 0);
+});
+
+test('相册 Storage 清理失败时记录仍保持删除', async () => {
+  const harness = createScriptHarness({ window: {
+    StorageObjectRef: {
+      collectMediaTargets() {
+        return { primary: [], secondary: ['records/new.jpg'], unresolved: false };
+      },
+    },
+  }});
+  harness.hooks.setConfirmAction(async () => true);
+  harness.hooks.setState({
+    authUser: { id: 'u1' }, backendReady: true,
+    photos: [{ id: 'p1', name: '回忆', url: 'new' }],
+    client: {
+      async remove() {},
+      async removeObjects() { throw new Error('storage failed'); },
+    },
+  });
+
+  assert.equal(await harness.hooks.deleteGalleryPhoto(0), true);
+  assert.equal(harness.hooks.getState().photos.length, 0);
+});
+
+test('相册云端上传立即保留记录 ID，上传后无需刷新即可删除', async () => {
+  let insertedRows;
+  const harness = createScriptHarness({ window: {
+    crypto: { randomUUID() { return '11111111-1111-4111-8111-111111111111'; } },
+    MapLabelLayout: { resolveAdministrativeCity() { return null; } },
+    MediaUpload: { isVideo() { return false; } },
+    MediaViewer: { canPlayLive() { return false; } },
+  }});
+  harness.hooks.setState({
+    authUser: { id: 'u1' }, backendReady: true, photos: [],
+    snapshotStore: { save() { return true; } },
+    client: {
+      async upload() {},
+      getPublicUrl(_bucket, path) { return 'https://secondary.supabase.co/storage/v1/object/public/love-photos/' + path; },
+      async insert(_table, rows) { insertedRows = rows; },
+    },
+  });
+
+  assert.equal(await harness.hooks.uploadPhotos([{ kind: 'image', file: { name: 'a.jpg', type: 'image/jpeg' } }]), true);
+  assert.equal(insertedRows[0].id, '11111111-1111-4111-8111-111111111111');
+  assert.equal(harness.hooks.getState().photos[0].id, insertedRows[0].id);
+});
+
 test('登录、忘记密码、恢复密码与退出均接入 Auth 客户端', () => {
   assert.match(script, /state\.authClient\.signInWithPassword\(/);
   assert.match(script, /state\.authClient\.resetPasswordForEmail\(/);
@@ -279,7 +385,7 @@ test('登录、忘记密码、恢复密码与退出均接入 Auth 客户端', ()
 });
 
 test('等待删除确认期间若会话失效则不会继续删除', () => {
-  [['deletePlan', 'fetchRecords'], ['deleteRecord', 'fetchCapsules'], ['deleteCapsule', 'confirmAction'], ['deleteTodo', 'fetchPhotos']].forEach(([name, next]) => {
+  [['deletePlan', 'fetchRecords'], ['deleteRecord', 'fetchCapsules'], ['deleteCapsule', 'confirmAction'], ['deleteTodo', 'fetchPhotos'], ['deleteGalleryPhoto', 'renderAll']].forEach(([name, next]) => {
     const start = script.indexOf(`async function ${name}(`);
     const end = script.indexOf(`function ${next}(`, start + 1);
     const body = script.slice(start, end);

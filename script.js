@@ -1627,6 +1627,15 @@ function safeMediaFileName(name) {
   return String(name || "media").replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 
+function createPhotoId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(char) {
+    var random = Math.floor(Math.random() * 16);
+    var value = char === "x" ? random : (random & 3) | 8;
+    return value.toString(16);
+  });
+}
+
 function resetUploadCompressionStats() {
   uploadCompressionStats = { originalBytes: 0, uploadBytes: 0, compressedCount: 0, warnings: [] };
 }
@@ -2069,7 +2078,9 @@ async function uploadPhotos(items) {
         var resolvedCity = resolveCity(city);
         var folder = resolvedCity ? resolvedCity.name : "unplaced";
         entry = await uploadMediaItem(item, folder, i);
+        entry.id = createPhotoId();
         var cloudEntry = {
+          id: entry.id,
           name: entry.name,
           path: entry.path,
           url: entry.url,
@@ -2112,6 +2123,44 @@ async function uploadPhotos(items) {
   var compressionMessage = uploadCompressionMessage();
   if (status && compressionMessage) status.textContent = compressionMessage;
   renderAll();
+  return true;
+}
+
+async function deleteGalleryPhoto(index) {
+  if (!requireAuthenticated()) return false;
+  var photo = state.photos[index];
+  if (!photo || !(await confirmAction("确定删除这个相册媒体吗？删除后无法恢复。"))) return false;
+  if (!requireAuthenticated()) return false;
+  if (photo.id && !state.backendReady) {
+    showCloudNotice("当前无法连接云端，照片没有删除。", true);
+    return false;
+  }
+  if (!photo.id && /^https?:/i.test(photo.url || "")) {
+    showCloudNotice("照片记录尚未同步，请刷新页面后再删除。", true);
+    return false;
+  }
+  var targets = window.StorageObjectRef.collectMediaTargets(photo, {
+    primaryUrl: supabaseConfig.url,
+    secondaryUrl: storageConfig.url,
+    bucket: storageBucket,
+  });
+  if (photo.id) {
+    try { await state.client.remove(tables.photos, photo.id); }
+    catch (_) {
+      showCloudNotice("照片没有删除，请检查网络后重试。", true);
+      return false;
+    }
+  }
+  state.photos.splice(index, 1);
+  renderAll();
+
+  var cleanupWarning = targets.unresolved;
+  for (var backend of ["primary", "secondary"]) {
+    if (!targets[backend].length) continue;
+    try { await state.client.removeObjects(storageBucket, targets[backend], backend); }
+    catch (_) { cleanupWarning = true; }
+  }
+  showCloudNotice(cleanupWarning ? "照片记录已删除，但有文件暂未清理。" : "照片已删除。", cleanupWarning);
   return true;
 }
 
@@ -2397,10 +2446,16 @@ function renderPhotos() {
     return;
   }
   var viewerItems = viewerMediaItems(state.photos);
-  grid.innerHTML = state.photos.map(function(p) {
-    return '<figure>' + mediaElementMarkup(p, p.name || "相册媒体", false, viewerItems.indexOf(p)) + '</figure>';
+  grid.innerHTML = state.photos.map(function(p, index) {
+    var label = p.name || "相册媒体";
+    var deleteButton = state.authUser ? '<button class="gallery-delete" type="button" data-delete-gallery-photo="' + index +
+      '" aria-label="删除相册媒体：' + escapeHtml(label) + '"><img src="assets/icons/trash.svg" alt="" /></button>' : '';
+    return '<figure>' + mediaElementMarkup(p, label, false, viewerItems.indexOf(p)) + deleteButton + '</figure>';
   }).join("");
   registerMediaViewerGroup(grid, state.photos);
+  grid.querySelectorAll("[data-delete-gallery-photo]").forEach(function(button) {
+    button.addEventListener("click", function() { deleteGalleryPhoto(parseInt(button.dataset.deleteGalleryPhoto)); });
+  });
 }
 
 // ========== Footprint Map ==========
