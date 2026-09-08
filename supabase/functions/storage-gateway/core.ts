@@ -5,11 +5,11 @@ export interface GatewayBackend {
 export interface GatewayDeps {
   backends: Record<string, GatewayBackend>;
   verifyUser(token: string): Promise<unknown>;
-  createSignedUpload(backend: string, bucket: string, path: string): Promise<string>;
-  removeObjects(backend: string, bucket: string, paths: string[]): Promise<void>;
+  createSignedUpload(backend: "primary" | "secondary", bucket: string, path: string): Promise<string>;
+  removeObjects(backend: "primary" | "secondary", bucket: string, paths: string[]): Promise<void>;
 }
 
-const FIXED_BACKEND = "secondary";
+const UPLOAD_BACKEND = "secondary";
 const FIXED_BUCKET = "love-photos";
 const MAX_DELETE_PATHS = 40;
 const PRODUCTION_ORIGIN = "https://xrh1238.github.io";
@@ -91,8 +91,9 @@ function bearerToken(request: Request): string | null {
 }
 
 function allowedBackend(body: Record<string, unknown>, deps: GatewayDeps): GatewayBackend | null {
-  if (body.backend !== FIXED_BACKEND || !Object.prototype.hasOwnProperty.call(deps.backends, FIXED_BACKEND)) return null;
-  const backend = deps.backends[FIXED_BACKEND];
+  if ((body.backend !== "primary" && body.backend !== "secondary") ||
+      !Object.prototype.hasOwnProperty.call(deps.backends, body.backend)) return null;
+  const backend = deps.backends[body.backend];
   return backend && backend.bucket === FIXED_BUCKET ? backend : null;
 }
 
@@ -137,11 +138,11 @@ export async function handleStorageGateway(request: Request, deps: GatewayDeps):
   }
 
   if (body.action === "sign-upload") {
-    if (!isSafeObjectPath(body.path)) {
+    if (body.backend !== UPLOAD_BACKEND || !isSafeObjectPath(body.path)) {
       return errorResponse(request, 400, "invalid_path", "Object path is not allowed");
     }
     try {
-      const signedUrl = await deps.createSignedUpload(FIXED_BACKEND, FIXED_BUCKET, body.path);
+      const signedUrl = await deps.createSignedUpload(UPLOAD_BACKEND, FIXED_BUCKET, body.path);
       if (typeof signedUrl !== "string" || !signedUrl) throw new Error("Invalid signed upload result");
       return jsonResponse(request, 200, { signedUrl });
     } catch (_) {
@@ -157,7 +158,7 @@ export async function handleStorageGateway(request: Request, deps: GatewayDeps):
       return errorResponse(request, 400, "invalid_paths", "Every object path must be safe and unique");
     }
     try {
-      await deps.removeObjects(FIXED_BACKEND, FIXED_BUCKET, body.paths);
+      await deps.removeObjects(body.backend, FIXED_BUCKET, body.paths);
       return jsonResponse(request, 200, { deleted: body.paths.length });
     } catch (_) {
       return errorResponse(request, 502, "storage_error", "Storage operation failed");

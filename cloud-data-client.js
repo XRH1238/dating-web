@@ -198,6 +198,11 @@
       return safeSegment(value, "无效的 Storage bucket");
     }
 
+    function safeStorageBackend(value) {
+      if (value !== "primary" && value !== "secondary") throw new Error("无效的 Storage 后端");
+      return value;
+    }
+
     return {
       select: async function(table) {
         return withTimeout(async function(signal) {
@@ -273,17 +278,18 @@
           }
         });
       },
-      removeObjects: async function(bucket, paths) {
+      removeObjects: async function(bucket, paths, backend) {
         bucket = safeBucket(bucket);
         var prefixes = safePaths(paths);
         if (!prefixes.length) return [];
         return withTimeout(async function(signal) {
           if (storageGatewayUrl) {
             var token = await requiredUserToken();
+            var deleteBackend = safeStorageBackend(backend || storageBackend);
             var gatewayResponse = await requestWithSignal(storageGatewayUrl, {
               method: "POST",
               headers: { apikey: key, Authorization: "Bearer " + token, "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "delete", backend: storageBackend, bucket: bucket, paths: prefixes }),
+              body: JSON.stringify({ action: "delete", backend: deleteBackend, bucket: bucket, paths: prefixes }),
             }, signal);
             return parse(gatewayResponse);
           }

@@ -663,6 +663,28 @@ test('配置网关时 Storage 删除使用主 JWT，空路径不请求', async (
   });
 });
 
+test('Storage 删除可以显式选择主后端且上传仍固定使用第二后端', async () => {
+  const calls = [];
+  const client = dataModule.createCloudDataClient({
+    url: 'https://primary.supabase.co',
+    key: 'main-publishable',
+    storageUrl: 'https://storage.supabase.co',
+    storageGatewayUrl: 'https://primary.supabase.co/functions/v1/storage-gateway',
+    storageBackend: 'secondary',
+    getAccessToken: async () => 'user-jwt',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200, async text() { return '[]'; } };
+    },
+  });
+
+  await client.removeObjects('love-photos', ['legacy/a.jpg'], 'primary');
+
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    action: 'delete', backend: 'primary', bucket: 'love-photos', paths: ['legacy/a.jpg'],
+  });
+});
+
 test('数据库与 Storage 请求分别使用主配置和 Storage 配置', async () => {
   const calls = [];
   const client = dataModule.createCloudDataClient({

@@ -212,6 +212,24 @@ test('delete requires one to forty unique safe paths and removes exact paths', a
   }
 });
 
+test('delete accepts the fixed primary backend but primary cannot sign uploads', async () => {
+  const backends = {
+    primary: { bucket: 'love-photos' },
+    secondary: { bucket: 'love-photos' },
+  };
+  const deleted = await invoke({
+    action: 'delete', backend: 'primary', bucket: 'love-photos', paths: ['records/legacy.jpg'],
+  }, 'valid-user-jwt', { backends });
+  assert.equal(deleted.response.status, 200);
+  assert.deepEqual(deleted.calls.remove, [{
+    backend: 'primary', bucket: 'love-photos', paths: ['records/legacy.jpg'],
+  }]);
+
+  const upload = await invoke({ ...validSignRequest, backend: 'primary' }, 'valid-user-jwt', { backends });
+  assert.equal(upload.response.status, 400);
+  assert.deepEqual(upload.calls.sign, []);
+});
+
 test('delete validates every path before removing anything', async () => {
   const { response, calls } = await invoke({
     action: 'delete', backend: 'secondary', bucket: 'love-photos',
@@ -236,8 +254,9 @@ test('Edge adapter verifies users and uses only server environment Storage crede
   assert.match(source, /requiredEnv\("STORAGE_BACKENDS_JSON"\)/);
   assert.match(source, /backend\.secretKey\.startsWith\("sb_secret_"\)/);
   assert.match(source, /mainClient\.auth\.getUser\(token\)/);
+  assert.match(source, /SUPABASE_SERVICE_ROLE_KEY/);
   assert.match(source, /createSignedUploadUrl\(path,\s*\{\s*upsert:\s*false\s*\}\)/);
-  assert.match(source, /storageClient\.storage\.from\(bucket\)\.remove\(paths\)/);
+  assert.match(source, /storageClients\[backend\]\.storage\.from\(bucket\)\.remove\(paths\)/);
   assert.doesNotMatch(source, /sb_secret_[A-Za-z0-9_-]+/);
   assert.match(config, /\[functions\.storage-gateway\]\s*verify_jwt\s*=\s*false/);
 });

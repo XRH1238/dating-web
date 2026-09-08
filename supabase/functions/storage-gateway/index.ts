@@ -50,30 +50,39 @@ function parseStorageBackend(): StorageBackendConfig {
 
 const mainUrl = requiredEnv("SUPABASE_URL");
 const mainPublishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || requiredEnv("SUPABASE_ANON_KEY");
+const mainServiceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 const storageBackend = parseStorageBackend();
 
 const mainClient = createClient(mainUrl, mainPublishableKey, {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 });
-const storageClient = createClient(storageBackend.url, storageBackend.secretKey, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-});
+const storageClients = {
+  primary: createClient(mainUrl, mainServiceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  }),
+  secondary: createClient(storageBackend.url, storageBackend.secretKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  }),
+};
 
 Deno.serve((request: Request) => handleStorageGateway(request, {
-  backends: { secondary: { bucket: storageBackend.bucket } },
+  backends: {
+    primary: { bucket: "love-photos" },
+    secondary: { bucket: storageBackend.bucket },
+  },
   async verifyUser(token: string) {
     const { data, error } = await mainClient.auth.getUser(token);
     if (error || !data.user) return null;
     return { id: data.user.id };
   },
-  async createSignedUpload(_backend: string, bucket: string, path: string) {
-    const { data, error } = await storageClient.storage.from(bucket)
+  async createSignedUpload(backend: "primary" | "secondary", bucket: string, path: string) {
+    const { data, error } = await storageClients[backend].storage.from(bucket)
       .createSignedUploadUrl(path, { upsert: false });
     if (error || !data?.signedUrl) throw new Error("Unable to create signed upload URL");
     return data.signedUrl;
   },
-  async removeObjects(_backend: string, bucket: string, paths: string[]) {
-    const { error } = await storageClient.storage.from(bucket).remove(paths);
+  async removeObjects(backend: "primary" | "secondary", bucket: string, paths: string[]) {
+    const { error } = await storageClients[backend].storage.from(bucket).remove(paths);
     if (error) throw new Error("Unable to remove Storage objects");
   },
 }));
