@@ -145,8 +145,11 @@ test('云端同步成功后状态条会自动收起', () => {
   assert.match(script, /setTimeout\(function\(\)\s*\{\s*setCloudStatus\(""\);\s*\},\s*4000\)/);
 });
 
-test('本次修改的页面资源使用同一组新缓存版本', () => {
-  ['styles.css', 'cloud-data-client.js', 'storage-object-ref.js', 'script.js'].forEach(asset => {
+test('本次修改的页面资源使用正确缓存版本', () => {
+  ['styles.css', 'script.js'].forEach(asset => {
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-1'));
+  });
+  ['cloud-data-client.js', 'storage-object-ref.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260914-1'));
   });
   ['record-date-picker.js', 'record-moods.js', 'trip-planning.js'].forEach(asset => {
