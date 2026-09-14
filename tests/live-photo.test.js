@@ -40,3 +40,25 @@ test('不支持的文件会被忽略并计数', () => {
   assert.deepEqual(result.items, []);
   assert.equal(result.rejectedCount, 1);
 });
+
+test('只有持久化普通图片可以补充动态视频', () => {
+  assert.equal(LivePhoto.canAttachMotion({ id: 'p1', url: 'a.jpg', kind: 'image' }), true);
+  assert.equal(LivePhoto.canAttachMotion({ url: 'a.jpg', kind: 'image' }), false);
+  assert.equal(LivePhoto.canAttachMotion({ id: 'p1', url: 'a.jpg', kind: 'live-photo', motion_url: 'a.mov' }), false);
+  assert.equal(LivePhoto.canAttachMotion({ id: 'v1', url: 'a.mov', kind: 'video' }), false);
+});
+
+test('补充动态只接受视频并构造完整引用', () => {
+  assert.equal(LivePhoto.isMotionFile({ name: 'clip.MOV', type: '' }), true);
+  assert.equal(LivePhoto.isMotionFile({ name: 'still.jpg', type: 'image/jpeg' }), false);
+  assert.deepEqual(
+    LivePhoto.motionFields({ name: 'clip.mov', type: 'video/quicktime' }, 'city/clip.mov', 'https://cdn/clip.mov'),
+    {
+      media_kind: 'live-photo',
+      motion_name: 'clip.mov',
+      motion_type: 'video/quicktime',
+      motion_path: 'city/clip.mov',
+      motion_url: 'https://cdn/clip.mov',
+    }
+  );
+});
