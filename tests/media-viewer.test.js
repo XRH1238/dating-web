@@ -92,3 +92,16 @@ test('Apple 播放错误后锁定到原生视频回退', () => {
   const state = Viewer.markAppleFailed(Viewer.createState([{ url: 'a.jpg', motion_url: 'a.mov' }], 0));
   assert.equal(state.appleFailed, true);
 });
+
+test('补充动态入口只在回调允许时展示且忙碌时锁定', () => {
+  const media = { id: 'p1', url: 'a.jpg', kind: 'image' };
+  assert.equal(Viewer.motionAttachmentState(media, null, false).visible, false);
+  assert.deepEqual(
+    Viewer.motionAttachmentState(media, () => true, false),
+    { visible: true, disabled: false }
+  );
+  assert.deepEqual(
+    Viewer.motionAttachmentState(media, () => true, true),
+    { visible: true, disabled: true }
+  );
+});

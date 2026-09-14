@@ -100,3 +100,12 @@ test('查看器保持已验证版本且页面入口使用本次缓存版本', ()
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260914-1'));
   });
 });
+
+test('查看器提供单视频补充动态入口和手机提示', () => {
+  assert.match(html, /id="media-viewer-attach-motion"/);
+  assert.match(html, /id="media-viewer-motion-input"[^>]*accept="video\/\*"/);
+  assert.match(html, /请先在照片 App 中将实况照片存储为视频/);
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /configureMotionAttachment/);
+  assert.match(viewer, /motionInput\.addEventListener\(['"]change/);
+});

@@ -23,6 +23,8 @@
   var pinchSession = null;
   var safariGestureScale = null;
   var wheelGestureTimer = null;
+  var motionAttachment = null;
+  var motionAttachmentBusy = false;
 
   function normalizeIndex(index, count) {
     if (!count) return 0;
@@ -136,6 +138,16 @@
   function canPlayLive(media) {
     var kind = media && (media.kind || media.media_kind);
     return !!(media && kind === 'live-photo' && media.url && media.motion_url);
+  }
+
+  function motionAttachmentState(media, canAttach, busy) {
+    var visible = typeof canAttach === 'function' && !!canAttach(media);
+    return { visible: visible, disabled: visible && !!busy };
+  }
+
+  function configureMotionAttachment(options) {
+    motionAttachment = options && typeof options.onSelect === 'function' ? options : null;
+    if (elements) renderCurrent();
   }
 
   function markAppleFailed(state) {
@@ -314,6 +326,12 @@
     image.draggable = false;
     elements.stage.appendChild(image);
     elements.live.hidden = !canPlayLive(media);
+    var attachment = motionAttachmentState(media, motionAttachment && motionAttachment.canAttach, motionAttachmentBusy);
+    elements.attachMotion.hidden = !attachment.visible;
+    elements.attachMotion.disabled = attachment.disabled;
+    elements.attachMotion.setAttribute('aria-busy', attachment.disabled ? 'true' : 'false');
+    elements.attachMotion.textContent = attachment.disabled ? '正在补充…' : '补充动态';
+    elements.motionHint.hidden = !attachment.visible;
     elements.prev.hidden = viewerState.items.length < 2;
     elements.next.hidden = viewerState.items.length < 2;
     setStatus((viewerState.index + 1) + ' / ' + viewerState.items.length +
@@ -417,6 +435,36 @@
     elements.prev.addEventListener('click', function () { changeMedia(-1); });
     elements.next.addEventListener('click', function () { changeMedia(1); });
     elements.live.addEventListener('click', playLive);
+    elements.attachMotion.addEventListener('click', function () {
+      elements.motionInput.value = '';
+      elements.motionInput.click();
+    });
+    elements.motionInput.addEventListener('change', function () {
+      var file = elements.motionInput.files && elements.motionInput.files[0];
+      var media = currentMedia();
+      if (!file || !media || !motionAttachment || motionAttachmentBusy) return;
+      var attachmentIndex = viewerState.index;
+      motionAttachmentBusy = true;
+      renderCurrent();
+      setStatus('正在补充动态视频…');
+      Promise.resolve(motionAttachment.onSelect(media, file)).then(function (updatedMedia) {
+        if (updatedMedia) viewerState.items[attachmentIndex] = updatedMedia;
+        if (viewerState.index === attachmentIndex) renderCurrent();
+      }).catch(function (error) {
+        setStatus(error && error.message ? error.message : '动态视频上传失败，请重试');
+      }).finally(function () {
+        motionAttachmentBusy = false;
+        elements.motionInput.value = '';
+        if (viewerState.index === attachmentIndex) {
+          var attachment = motionAttachmentState(currentMedia(), motionAttachment && motionAttachment.canAttach, false);
+          elements.attachMotion.hidden = !attachment.visible;
+          elements.attachMotion.disabled = false;
+          elements.attachMotion.setAttribute('aria-busy', 'false');
+          elements.attachMotion.textContent = '补充动态';
+          elements.motionHint.hidden = !attachment.visible;
+        }
+      });
+    });
     elements.zoomIn.addEventListener('click', function () { zoomBy(0.5); });
     elements.zoomOut.addEventListener('click', function () { zoomBy(-0.5); });
     elements.reset.addEventListener('click', resetView);
@@ -558,6 +606,9 @@
       prev: doc.querySelector('#media-viewer-prev'),
       next: doc.querySelector('#media-viewer-next'),
       live: doc.querySelector('#media-viewer-live'),
+      attachMotion: doc.querySelector('#media-viewer-attach-motion'),
+      motionInput: doc.querySelector('#media-viewer-motion-input'),
+      motionHint: doc.querySelector('#media-viewer-motion-hint'),
       zoomIn: doc.querySelector('#media-viewer-zoom-in'),
       zoomOut: doc.querySelector('#media-viewer-zoom-out'),
       reset: doc.querySelector('#media-viewer-reset'),
@@ -589,6 +640,8 @@
     zoomAroundPoint: zoomAroundPoint,
     applyPinchGesture: applyPinchGesture,
     canPlayLive: canPlayLive,
+    motionAttachmentState: motionAttachmentState,
+    configureMotionAttachment: configureMotionAttachment,
     markAppleFailed: markAppleFailed,
     loadLivePhotosKit: loadLivePhotosKit,
     open: open,
