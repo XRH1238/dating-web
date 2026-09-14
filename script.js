@@ -101,6 +101,7 @@ const recordDateState = {
   viewMonth: new Date().getMonth() + 1,
 };
 let recordDraftFiles = [];
+let editingPlanIndex = -1;
 let editingRecordId = null;
 let recordExistingPhotos = [];
 let recordRemovedPhotos = [];
@@ -598,8 +599,9 @@ function bindEvents() {
     btn.addEventListener("click", function() {
       if (!requireAuthenticated()) return;
       activeType = "plan";
-      panelTitle.textContent = "添加出游计划";
-      panelLabel.textContent = "New Plan";
+      editingPlanIndex = -1;
+      setPlanFormMode("create");
+      form.reset();
       togglePlanFields(true);
       resetRouteEditor();
       resetPlanDatePicker();
@@ -621,7 +623,8 @@ function bindEvents() {
     if (!date) return;
     var entry = { title: fd.get("title").trim(), date: date, description: fd.get("description").trim() };
     entry.segments = getRouteSegments();
-    await afterSuccessfulSave(savePlan(entry), function() {
+    var submittedPlanIndex = editingPlanIndex;
+    await afterSuccessfulSave(submittedPlanIndex >= 0 ? updatePlan(submittedPlanIndex, entry) : savePlan(entry), function() {
       form.reset();
       resetPlanDatePicker();
       closePanel();
@@ -719,10 +722,33 @@ function resetRouteEditor() {
   addRouteSegment("return");
 }
 
+function setPlanFormMode(mode) {
+  var editing = mode === "edit";
+  var submit = form && form.querySelector('[type="submit"]');
+  if (panelTitle) panelTitle.textContent = editing ? "编辑出游计划" : "添加出游计划";
+  if (panelLabel) panelLabel.textContent = editing ? "Edit Plan" : "New Plan";
+  if (submit) submit.textContent = editing ? "保存修改" : "保存到页面";
+}
+
+function restoreRouteEditor(segments) {
+  var outbound = document.querySelector("#outbound-route-segments");
+  var returning = document.querySelector("#return-route-segments");
+  if (!outbound || !returning) return;
+  outbound.innerHTML = "";
+  returning.innerHTML = "";
+  ["outbound", "return"].forEach(function(direction) {
+    var matches = segments.filter(function(segment) { return segment.direction === direction; });
+    if (!matches.length) addRouteSegment(direction);
+    matches.forEach(function(segment) { addRouteSegment(direction, segment); });
+  });
+}
+
 // ========== Panel ==========
 function closePanel() {
   panel.classList.remove("is-open");
   panel.setAttribute("aria-hidden", "true");
+  editingPlanIndex = -1;
+  setPlanFormMode("create");
 }
 
 function openPanelById(target) {
@@ -863,6 +889,38 @@ function resetPlanDatePicker() {
   planDateState.viewMonth = today.getMonth() + 1;
   setPlanDateStatus("");
   renderPlanDatePicker();
+}
+
+function restorePlanDateRange(value) {
+  var range = window.MapLabelLayout.parseDateRange(value);
+  if (!range.valid) {
+    resetPlanDatePicker();
+    return;
+  }
+  planDateState.active = "start";
+  planDateState.start = recordDateEntryFromIso(range.start);
+  planDateState.end = recordDateEntryFromIso(range.end);
+  var parts = range.start.split("-");
+  planDateState.viewYear = Number(parts[0]);
+  planDateState.viewMonth = Number(parts[1]);
+  renderPlanDatePicker();
+}
+
+function openPlanEditor(index) {
+  if (!requireAuthenticated()) return;
+  var plan = state.plans[index];
+  if (!plan) return;
+  editingPlanIndex = index;
+  form.reset();
+  form.elements.title.value = plan.title || "";
+  form.elements.description.value = plan.description || "";
+  restorePlanDateRange(plan.date);
+  restoreRouteEditor(normalizePlanSegments(plan));
+  setPlanFormMode("edit");
+  togglePlanFields(true);
+  panel.classList.add("is-open");
+  panel.setAttribute("aria-hidden", "false");
+  form.elements.title.focus();
 }
 
 function validatePlanDateRange() {
@@ -1043,6 +1101,7 @@ function validateRecordDateRange() {
 
 // ========== Route Editor ==========
 function addRouteSegment(direction) {
+  var segment = arguments[1];
   direction = direction === "return" ? "return" : "outbound";
   var container = document.querySelector(direction === "return" ? "#return-route-segments" : "#outbound-route-segments");
   if (!container) return;
@@ -1055,6 +1114,11 @@ function addRouteSegment(direction) {
   row.querySelector(".route-remove-btn").addEventListener("click", function() {
     row.remove();
   });
+  if (segment) {
+    row.querySelector(".route-from").value = segment.from || "";
+    row.querySelector(".route-to").value = segment.to || "";
+    row.querySelector(".route-transport").value = normalizeTransport(segment.transport);
+  }
   container.appendChild(row);
 }
 function getRouteSegments() {
@@ -1245,6 +1309,30 @@ async function savePlan(entry) {
     }
   } else {
     state.plans.unshift(entry);
+  }
+  renderAll();
+  return true;
+}
+async function updatePlan(index, entry) {
+  if (!requireAuthenticated()) return false;
+  var plan = state.plans[index];
+  if (!plan) return false;
+  if (plan.id) {
+    if (!state.backendReady || !state.client) {
+      showCloudNotice("修改需要连接云端，表单内容仍保留。", true);
+      return false;
+    }
+    try {
+      await state.client.update(tables.plans, plan.id, entry);
+      await fetchPlans();
+    } catch (_) {
+      state.backendReady = false;
+      setCloudStatus("offline");
+      showCloudNotice("计划没有修改成功，原计划保持不变。", true);
+      return false;
+    }
+  } else {
+    state.plans[index] = Object.assign({}, plan, entry);
   }
   renderAll();
   return true;
@@ -2222,10 +2310,15 @@ function renderPlans() {
   list.innerHTML = state.plans.map(function(p, i) {
     var description = String(p.description || "").trim();
     var deleteButton = state.authUser ? '<button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button>' : '';
+    var editButton = state.authUser ? '<button class="plan-edit" type="button" data-edit-plan="' + i + '" aria-label="编辑出游计划：' + escapeHtml(p.title || "未命名计划") + '">编辑</button>' : '';
+    var actions = state.authUser ? '<div class="plan-actions">' + editButton + deleteButton + '</div>' : '';
     return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
       '</span><div><h3>' + escapeHtml(p.title || "") + '</h3>' + (description ? '<p>' + escapeHtml(description) + '</p>' : '') +
-      '</div>' + deleteButton + '</article>';
+      '</div>' + actions + '</article>';
   }).join("");
+  list.querySelectorAll("[data-edit-plan]").forEach(function(btn) {
+    btn.addEventListener("click", function() { openPlanEditor(parseInt(btn.dataset.editPlan)); });
+  });
   list.querySelectorAll("[data-delete-plan]").forEach(function(btn) {
     btn.addEventListener("click", function() { deletePlan(parseInt(btn.dataset.deletePlan)); });
   });
@@ -2526,9 +2619,9 @@ function renderFootprintMap() {
       return '<article><span><b>' + p.segments.length + '</b>' + escapeHtml(p.title || "出游路线") +
         '</span><p>' + p.segments.map(function(s) {
           var visual = transportVisual(s.transport);
-          return '<span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
+          return '<span class="map-route-segment"><span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
             '<b class="route-direction-mark">' + (s.direction === "return" ? "返" : "去") + '</b>' +
-            escapeHtml(s.from + " → " + s.to + " · " + s.transport);
+            '<span class="route-segment-text">' + escapeHtml(s.from + " → " + s.to + " · " + s.transport) + '</span></span>';
         }).join("") + '</p></article>';
     }).join("") + '</div>' +
     (unknownCities.length ? '<p class="map-note">未定位：' + escapeHtml(unknownCities.join("、")) + '</p>' : "");

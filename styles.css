@@ -1112,7 +1112,7 @@ p {
 
 .map-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.28fr);
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 0.42fr);
   gap: 14px;
   align-items: stretch;
 }
@@ -1366,7 +1366,7 @@ p {
   border-radius: 8px;
 }
 
-.map-route-list span {
+.map-route-list article > span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1375,7 +1375,7 @@ p {
   font-weight: 800;
 }
 
-.map-route-list span b {
+.map-route-list article > span > b {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1388,10 +1388,31 @@ p {
 }
 
 .map-route-list p {
+  display: grid;
+  gap: 7px;
   margin: 6px 0 0;
   color: var(--ink);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.map-route-list .map-route-segment {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 7px;
+  overflow-x: auto;
+  color: var(--ink);
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.map-route-list .map-route-segment::-webkit-scrollbar { display: none; }
+
+.map-route-list .route-segment-text {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .map-route-list .legend-segment-icon {
@@ -1612,6 +1633,31 @@ p {
   padding: 18px;
 }
 
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-edit,
+.plan-delete {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  color: var(--rose-dark);
+  background: #fff;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.plan-edit {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .plan-delete {
   display: grid;
   min-width: 40px;
@@ -1619,16 +1665,13 @@ p {
   height: 40px;
   place-items: center;
   padding: 10px;
-  border: 1px solid var(--line);
   border-radius: 50%;
-  color: var(--rose-dark);
-  background: #fff;
-  cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
 .plan-delete img { width: 18px; height: 18px; }
 
+.plan-edit:hover,
+.plan-edit:focus-visible,
 .plan-delete:hover,
 .plan-delete:focus-visible {
   border-color: rgba(217, 95, 120, .62);
@@ -1636,6 +1679,7 @@ p {
   transform: translateY(-1px);
 }
 
+.plan-edit:focus-visible,
 .plan-delete:focus-visible { outline: 3px solid rgba(217, 95, 120, .25); outline-offset: 2px; }
 
 .date-pill {
@@ -2629,7 +2673,7 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .plan-delete { justify-self: end; }
+  .plan-actions { justify-self: end; }
 
   .plan-fields {
     grid-template-columns: 1fr;

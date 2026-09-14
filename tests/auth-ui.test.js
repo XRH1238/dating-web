@@ -684,7 +684,7 @@ test('保存失败不执行表单清理，成功后只清理一次', async () =>
   assert.equal(cleanupCount, 0);
   assert.equal(await harness.hooks.afterSuccessfulSave(Promise.resolve(true), () => { cleanupCount += 1; }), true);
   assert.equal(cleanupCount, 1);
-  assert.match(script, /afterSuccessfulSave\(savePlan\(entry\)/);
+  assert.match(script, /afterSuccessfulSave\(submittedPlanIndex >= 0 \? updatePlan\(submittedPlanIndex, entry\) : savePlan\(entry\)/);
   assert.match(script, /afterSuccessfulSave\(saveTodo\(input\.value\.trim\(\)\)/);
 });
 
