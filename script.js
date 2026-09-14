@@ -707,6 +707,10 @@ function bindEvents() {
   if (capsuleForm) capsuleForm.addEventListener("submit", submitCapsuleForm);
   bindPlanDatePicker();
   bindRecordDatePicker();
+  window.MediaViewer.configureMotionAttachment({
+    canAttach: canAttachGalleryMotion,
+    onSelect: attachMotionToGalleryPhoto,
+  });
 }
 
 function togglePlanFields(show) {
@@ -2142,6 +2146,37 @@ async function fetchPhotos() {
       kind: photo.media_kind || (photo.motion_url ? "live-photo" : (window.MediaUpload.isVideo(photo) ? "video" : "image")),
     });
   });
+}
+
+function canAttachGalleryMotion(photo) {
+  return !!(state.authUser && state.backendReady && state.photos.indexOf(photo) >= 0 &&
+    window.LivePhotoMedia.canAttachMotion(photo));
+}
+
+function galleryMediaFolder(photo) {
+  var path = String(photo && photo.path || "");
+  var slash = path.lastIndexOf("/");
+  return slash > 0 ? path.slice(0, slash) : "unplaced";
+}
+
+async function attachMotionToGalleryPhoto(photo, file) {
+  if (!requireAuthenticated()) throw new Error("请先登录后再保存");
+  if (!canAttachGalleryMotion(photo)) throw new Error("当前照片暂时无法补充动态");
+  if (!window.LivePhotoMedia.isMotionFile(file)) throw new Error("请选择从实况照片存储的视频");
+  var motionPath = galleryMediaFolder(photo) + "/" + Date.now() + "-motion-" + safeMediaFileName(file.name);
+  await state.client.upload(storageBucket, motionPath, file);
+  var motionUrl = state.client.getPublicUrl(storageBucket, motionPath);
+  var fields = window.LivePhotoMedia.motionFields(file, motionPath, motionUrl);
+  try {
+    await state.client.update(tables.photos, photo.id, fields);
+  } catch (error) {
+    try { await state.client.removeObjects(storageBucket, [motionPath]); } catch (_) {}
+    throw error;
+  }
+  Object.assign(photo, fields, { kind: "live-photo" });
+  renderPhotos();
+  showCloudNotice("动态视频已补充，现在可以长按播放。", false);
+  return photo;
 }
 
 function fileToDataUrl(file) {

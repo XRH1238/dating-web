@@ -109,3 +109,13 @@ test('查看器提供单视频补充动态入口和手机提示', () => {
   assert.match(viewer, /configureMotionAttachment/);
   assert.match(viewer, /motionInput\.addEventListener\(['"]change/);
 });
+
+test('已有照片补充动态会上传视频、更新记录并在失败时回滚', () => {
+  assert.match(script, /function canAttachGalleryMotion\(photo\)/);
+  assert.match(script, /async function attachMotionToGalleryPhoto\(photo, file\)/);
+  assert.match(script, /LivePhotoMedia\.isMotionFile\(file\)/);
+  assert.match(script, /state\.client\.upload\(storageBucket, motionPath, file\)/);
+  assert.match(script, /state\.client\.update\(tables\.photos, photo\.id, fields\)/);
+  assert.match(script, /state\.client\.removeObjects\(storageBucket, \[motionPath\]\)/);
+  assert.match(script, /MediaViewer\.configureMotionAttachment/);
+});
