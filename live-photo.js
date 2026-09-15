@@ -79,6 +79,19 @@
         items.push({ kind: 'image', file: photoFile });
       }
     });
+    var unmatchedImages = items.filter(function (item) { return item.kind === 'image'; });
+    var unusedVideos = supported.filter(isVideo).filter(function (file) { return !usedVideos.has(file); });
+    if (supported.length === 2 && unmatchedImages.length === 1 && unusedVideos.length === 1) {
+      var unmatchedImage = unmatchedImages[0];
+      var imageIndex = items.indexOf(unmatchedImage);
+      items[imageIndex] = {
+        kind: 'live-photo',
+        photoFile: unmatchedImage.file,
+        motionFile: unusedVideos[0],
+        motionPlayback: 'video',
+      };
+      usedVideos.add(unusedVideos[0]);
+    }
     supported.filter(isVideo).forEach(function (file) {
       if (!usedVideos.has(file)) items.push({ kind: 'video', file: file });
     });

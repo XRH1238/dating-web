@@ -1584,6 +1584,7 @@ async function localMediaRef(item) {
   if (item.kind === "live-photo") {
     return {
       kind: "live-photo",
+      motionPlayback: item.motionPlayback || "apple",
       name: item.photoFile.name,
       type: item.photoFile.type,
       url: await fileToDataUrl(item.photoFile),
@@ -1779,7 +1780,8 @@ async function uploadMediaItem(item, folder, index) {
     url: state.client.getPublicUrl(storageBucket, path),
   };
   if (item.kind !== "live-photo") return ref;
-  var motionPath = folder + "/" + stamp + "-" + safeMediaFileName(item.motionFile.name);
+  var motionMarker = item.motionPlayback === "video" ? "-motion-" : "-";
+  var motionPath = folder + "/" + stamp + motionMarker + safeMediaFileName(item.motionFile.name);
   await state.client.upload(storageBucket, motionPath, item.motionFile);
   ref.motion_name = item.motionFile.name;
   ref.motion_type = item.motionFile.type;

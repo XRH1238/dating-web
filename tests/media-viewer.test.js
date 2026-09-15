@@ -93,6 +93,23 @@ test('Apple 播放错误后锁定到原生视频回退', () => {
   assert.equal(state.appleFailed, true);
 });
 
+test('浏览器回退播放器隐藏控制条并主动启用声音', () => {
+  const video = {};
+  Viewer.configureFallbackVideo(video);
+
+  assert.equal(video.controls, false);
+  assert.equal(video.muted, false);
+  assert.equal(video.defaultMuted, false);
+  assert.equal(video.volume, 1);
+  assert.equal(video.playsInline, true);
+});
+
+test('补充动态和不同名自动配对的视频直接使用浏览器播放器', () => {
+  assert.equal(Viewer.prefersNativeVideo({ motion_path: 'city/123-motion-clip.mov' }), true);
+  assert.equal(Viewer.prefersNativeVideo({ motionPlayback: 'video', motion_url: 'clip.mov' }), true);
+  assert.equal(Viewer.prefersNativeVideo({ motion_path: 'city/123-IMG_1.MOV' }), false);
+});
+
 test('补充动态入口只在回调允许时展示且忙碌时锁定', () => {
   const media = { id: 'p1', url: 'a.jpg', kind: 'image' };
   assert.equal(Viewer.motionAttachmentState(media, null, false).visible, false);
