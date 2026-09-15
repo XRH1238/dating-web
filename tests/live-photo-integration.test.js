@@ -94,9 +94,28 @@ test('双指开始会取消实况照片长按并进入无过渡手势状态', ()
 });
 
 test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
-  assert.match(html, /live-photo\.js\?v=20260830-5/);
-  assert.match(html, /media-viewer\.js\?v=20260830-7/);
+  assert.match(html, /live-photo\.js\?v=20260915-1/);
+  assert.match(html, /media-viewer\.js\?v=20260915-1/);
   ['styles.css', 'script.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-1'));
   });
+});
+
+test('查看器提供单视频补充动态入口和手机提示', () => {
+  assert.match(html, /id="media-viewer-attach-motion"/);
+  assert.match(html, /id="media-viewer-motion-input"[^>]*accept="video\/\*"/);
+  assert.match(html, /请先在照片 App 中将实况照片存储为视频/);
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /configureMotionAttachment/);
+  assert.match(viewer, /motionInput\.addEventListener\(['"]change/);
+});
+
+test('已有照片补充动态会上传视频、更新记录并在失败时回滚', () => {
+  assert.match(script, /function canAttachGalleryMotion\(photo\)/);
+  assert.match(script, /async function attachMotionToGalleryPhoto\(photo, file\)/);
+  assert.match(script, /LivePhotoMedia\.isMotionFile\(file\)/);
+  assert.match(script, /state\.client\.upload\(storageBucket, motionPath, file\)/);
+  assert.match(script, /state\.client\.update\(tables\.photos, photo\.id, fields\)/);
+  assert.match(script, /state\.client\.removeObjects\(storageBucket, \[motionPath\]\)/);
+  assert.match(script, /MediaViewer\.configureMotionAttachment/);
 });

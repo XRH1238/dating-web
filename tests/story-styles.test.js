@@ -55,3 +55,10 @@ test('窄屏日期摘要与手动输入可以安全换行', () => {
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.record-date-summary\s*\{[^}]*grid-template-columns:\s*1fr/s);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*?\.record-date-manual\s*\{[^}]*flex-wrap:\s*wrap/s);
 });
+
+test('补充动态入口适配手机安全区和键盘焦点', () => {
+  assert.match(css, /#media-viewer-attach-motion[\s\S]*min-height:\s*44px/);
+  assert.match(css, /#media-viewer-attach-motion:focus-visible/);
+  assert.match(css, /media-viewer-motion-hint/);
+  assert.match(css, /#media-viewer-attach-motion\[aria-busy="true"\]/);
+});

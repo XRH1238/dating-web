@@ -32,6 +32,28 @@
     return !!(media && media.kind === 'live-photo' && media.photoFile && media.motionFile);
   }
 
+  function persistedKind(media) {
+    return String(media && (media.kind || media.media_kind) || 'image');
+  }
+
+  function canAttachMotion(media) {
+    return !!(media && media.id && media.url && persistedKind(media) === 'image' && !media.motion_url);
+  }
+
+  function isMotionFile(file) {
+    return isVideo(file);
+  }
+
+  function motionFields(file, path, url) {
+    return {
+      media_kind: 'live-photo',
+      motion_name: fileName(file),
+      motion_type: mimeType(file),
+      motion_path: String(path || ''),
+      motion_url: String(url || ''),
+    };
+  }
+
   function selectMedia(files, existingCount, limit) {
     var all = Array.from(files || []);
     var supported = all.filter(function (file) {
@@ -84,5 +106,8 @@
     stem: stem,
     selectMedia: selectMedia,
     isLivePhoto: isLivePhoto,
+    canAttachMotion: canAttachMotion,
+    isMotionFile: isMotionFile,
+    motionFields: motionFields,
   };
 }));

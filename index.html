@@ -451,11 +451,14 @@
         <button class="media-viewer-nav media-viewer-next" id="media-viewer-next" type="button" aria-label="下一张">›</button>
         <div class="media-viewer-toolbar" aria-label="图片查看控制">
           <button id="media-viewer-live" type="button" aria-label="播放实况照片">◉ LIVE</button>
+          <button id="media-viewer-attach-motion" type="button" aria-label="为当前照片补充动态视频">补充动态</button>
+          <input id="media-viewer-motion-input" type="file" accept="video/*" hidden />
           <button id="media-viewer-zoom-out" type="button" aria-label="缩小">−</button>
           <button id="media-viewer-reset" type="button" aria-label="恢复原始大小">100%</button>
           <button id="media-viewer-zoom-in" type="button" aria-label="放大">＋</button>
         </div>
         <p class="media-viewer-status" id="media-viewer-status" role="status" aria-live="polite"></p>
+        <p class="media-viewer-motion-hint" id="media-viewer-motion-hint" hidden>请先在照片 App 中将实况照片存储为视频</p>
       </div>
     </dialog>
 
@@ -466,9 +469,9 @@
     <script src="auth-client.js?v=20260905-1"></script>
     <script src="cloud-data-client.js?v=20260915-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
-    <script src="live-photo.js?v=20260830-5"></script>
+    <script src="live-photo.js?v=20260915-1"></script>
     <script src="image-compression.js?v=20260830-6"></script>
-    <script src="media-viewer.js?v=20260830-7"></script>
+    <script src="media-viewer.js?v=20260915-1"></script>
     <script src="record-recovery.js?v=20260828-1"></script>
     <script src="china-counties-data.js"></script>
     <script src="china-cities-data.js"></script>
