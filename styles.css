@@ -1438,16 +1438,22 @@ p {
 
 .transport-icon-guide {
   display: flex;
-  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 9px;
+  overflow-x: auto;
   padding: 14px 16px;
   border: 1px solid rgba(128, 80, 100, 0.12);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.58);
+  scrollbar-width: none;
 }
 
+.transport-icon-guide::-webkit-scrollbar { display: none; }
+
 .transport-icon-guide-title {
+  flex: 0 0 auto;
   margin-right: 3px;
   color: var(--ink);
   font-size: 13px;
@@ -1456,6 +1462,7 @@ p {
 
 .transport-icon-guide-item {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   color: var(--transport-color);

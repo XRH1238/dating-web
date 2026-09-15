@@ -147,7 +147,7 @@ test('云端同步成功后状态条会自动收起', () => {
 
 test('本次修改的页面资源使用同一组新缓存版本', () => {
   ['styles.css', 'cloud-data-client.js', 'storage-object-ref.js', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260914-1'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-1'));
   });
   ['record-date-picker.js', 'record-moods.js', 'trip-planning.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-1'));

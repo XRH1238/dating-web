@@ -2586,11 +2586,12 @@ function renderFootprintMap() {
   }).filter(function(p) { return p.segments.length; });
 
   var unknownCities = [];
-  var visited = new Map();
+  var destinationCities = new Map();
   mappedPlans.forEach(function(p) {
     p.segments.forEach(function(s) {
-      if (s.start) visited.set(s.from, { name: s.from, coordinates: s.start });
-      if (s.end) visited.set(s.to, { name: s.to, coordinates: s.end });
+      if (s.direction === "outbound" && s.end) {
+        destinationCities.set(s.to, { name: s.to, coordinates: s.end });
+      }
     });
   });
 
@@ -2605,18 +2606,18 @@ function renderFootprintMap() {
     var city = resolveCity(getPhotoCity(photo));
     return city ? { city: city.name, coordinates: city.coordinates, url: photo.url, date: photo.created_at } : null;
   }).filter(Boolean);
-  renderChinaMap(mapEl, overlay, mappedPlans, Array.from(visited.values()), mapPhotos);
+  renderChinaMap(mapEl, overlay, mappedPlans, Array.from(destinationCities.values()), mapPhotos);
 
   if (!state.plans.length) {
     legend.innerHTML = "<p>添加出游计划后，中国地图会显示你们的路线。</p>";
     return;
   }
-  legend.innerHTML = '<div class="map-legend-count"><strong>' + visited.size +
+  legend.innerHTML = '<div class="map-legend-count"><strong>' + destinationCities.size +
     '</strong><span>个已标记城市</span></div>' +
     (mapPhotos.length ? '<p class="map-photo-count">已挂上 ' + mapPhotos.length + ' 张城市照片</p>' : (state.photos.length ? '<p class="map-note">照片上传时填写拍摄城市，即可挂到地图上。</p>' : '')) +
     '<div class="map-route-list">' +
-    mappedPlans.map(function(p) {
-      return '<article><span><b>' + p.segments.length + '</b>' + escapeHtml(p.title || "出游路线") +
+    mappedPlans.map(function(p, index) {
+      return '<article><span><b>' + (index + 1) + '</b>' + escapeHtml(p.title || "出游路线") +
         '</span><p>' + p.segments.map(function(s) {
           var visual = transportVisual(s.transport);
           return '<span class="map-route-segment"><span class="legend-segment-icon" style="--transport-color:' + visual.color + '" title="' + visual.name + '">' + transportIcon(s.transport) + '</span>' +
