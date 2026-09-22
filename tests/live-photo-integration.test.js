@@ -129,10 +129,10 @@ test('双指开始会取消实况照片长按并进入无过渡手势状态', ()
 });
 
 test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
-  assert.match(html, /live-photo\.js\?v=20260915-2/);
-  assert.match(html, /media-viewer\.js\?v=20260915-2/);
+  assert.match(html, /live-photo\.js\?v=20260922-1/);
+  assert.match(html, /media-viewer\.js\?v=20260922-1/);
   ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-2'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260922-1'));
   });
 });
 
