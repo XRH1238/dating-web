@@ -87,3 +87,13 @@ test('补充动态只接受视频并构造完整引用', () => {
     }
   );
 });
+
+test('HEIC 与 HEIF 实况照片使用动态资源作为兼容预览', () => {
+  assert.equal(LivePhoto.previewMode({ kind: 'live-photo', name: 'IMG_1.HEIC', motion_url: 'IMG_1.MOV' }), 'motion');
+  assert.equal(LivePhoto.previewMode({ media_kind: 'live-photo', type: 'image/heif', motion_url: 'IMG_2.MOV' }), 'motion');
+});
+
+test('可显示静态图和普通媒体保持图片预览', () => {
+  assert.equal(LivePhoto.previewMode({ kind: 'live-photo', name: 'IMG_1.JPG', motion_url: 'IMG_1.MOV' }), 'image');
+  assert.equal(LivePhoto.previewMode({ kind: 'image', name: 'IMG_1.HEIC' }), 'image');
+});

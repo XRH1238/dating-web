@@ -36,6 +36,14 @@
     return String(media && (media.kind || media.media_kind) || 'image');
   }
 
+  function previewMode(media) {
+    var kind = persistedKind(media);
+    var name = String(media && media.name || '');
+    var type = String(media && media.type || '').toLowerCase();
+    var isHeic = /\.(heic|heif)$/i.test(name) || /image\/hei[cf]/.test(type);
+    return kind === 'live-photo' && media.motion_url && isHeic ? 'motion' : 'image';
+  }
+
   function canAttachMotion(media) {
     return !!(media && media.id && media.url && persistedKind(media) === 'image' && !media.motion_url);
   }
@@ -122,5 +130,6 @@
     canAttachMotion: canAttachMotion,
     isMotionFile: isMotionFile,
     motionFields: motionFields,
+    previewMode: previewMode,
   };
 }));

@@ -11,6 +11,10 @@
   var elements = null;
   var returnFocus = null;
   var applePlayer = null;
+  var applePlayerHost = null;
+  var applePlayerPromise = null;
+  var playerGeneration = 0;
+  var pendingApplePlay = false;
   var fallbackVideo = null;
   var holdTimer = null;
   var holdPlaying = false;
@@ -154,6 +158,15 @@
     return video;
   }
 
+  function configureApplePlayer(player, media, kit) {
+    player.photoSrc = media.url;
+    player.videoSrc = media.motion_url;
+    player.proactivelyLoadsVideo = true;
+    player.showsNativeControls = false;
+    if (kit.PlaybackStyle && kit.PlaybackStyle.FULL) player.playbackStyle = kit.PlaybackStyle.FULL;
+    return player;
+  }
+
   function motionAttachmentState(media, canAttach, busy) {
     var visible = typeof canAttach === 'function' && !!canAttach(media);
     return { visible: visible, disabled: visible && !!busy };
@@ -214,6 +227,7 @@
 
   function stopPlayback() {
     clearHoldTimer();
+    pendingApplePlay = false;
     if (applePlayer) {
       try {
         if (typeof applePlayer.stop === 'function') applePlayer.stop();
@@ -221,7 +235,14 @@
       } catch (_) {}
     }
     if (fallbackVideo) fallbackVideo.pause();
+  }
+
+  function disposePlayback() {
+    stopPlayback();
+    playerGeneration += 1;
     applePlayer = null;
+    applePlayerHost = null;
+    applePlayerPromise = null;
     fallbackVideo = null;
   }
 
@@ -316,29 +337,42 @@
 
   function applyScale() {
     if (!elements) return;
-    var media = elements.stage.querySelector('.media-viewer-media');
-    if (media) {
+    elements.stage.querySelectorAll('.media-viewer-media').forEach(function(media) {
       media.style.setProperty('--media-scale', String(viewerState.scale));
       media.style.setProperty('--media-x', (viewerState.x || 0) + 'px');
       media.style.setProperty('--media-y', (viewerState.y || 0) + 'px');
-    }
+    });
     elements.reset.textContent = Math.round(viewerState.scale * 100) + '%';
     elements.stage.classList.toggle('is-zoomed', viewerState.scale > 1);
   }
 
   function renderCurrent() {
     if (!elements) return;
-    stopPlayback();
+    disposePlayback();
     var media = currentMedia();
     elements.stage.innerHTML = '';
     if (!media) return;
-    var image = elements.document.createElement('img');
-    image.className = 'media-viewer-media';
-    image.src = media.url;
-    image.alt = media.name || '高清照片';
-    image.decoding = 'async';
-    image.draggable = false;
-    elements.stage.appendChild(image);
+    var useMotionPreview = canPlayLive(media) && /\.(heic|heif)(?:$|\?)/i.test(String(media.name || media.url || ''));
+    var preview = elements.document.createElement(useMotionPreview ? 'video' : 'img');
+    preview.className = 'media-viewer-media media-viewer-preview';
+    preview.draggable = false;
+    if (useMotionPreview) {
+      preview.src = media.motion_url;
+      preview.muted = true;
+      preview.defaultMuted = true;
+      preview.playsInline = true;
+      preview.preload = 'metadata';
+      preview.setAttribute('playsinline', '');
+      preview.setAttribute('aria-label', media.name || '实况照片预览');
+      preview.addEventListener('loadeddata', function () {
+        try { preview.currentTime = Math.min(0.05, Math.max(0, preview.duration || 0)); } catch (_) {}
+      }, { once: true });
+    } else {
+      preview.src = media.url;
+      preview.alt = media.name || '高清照片';
+      preview.decoding = 'async';
+    }
+    elements.stage.appendChild(preview);
     elements.live.hidden = !canPlayLive(media);
     var attachment = motionAttachmentState(media, motionAttachment && motionAttachment.canAttach, motionAttachmentBusy);
     elements.attachMotion.hidden = !attachment.visible;
@@ -351,9 +385,10 @@
     setStatus((viewerState.index + 1) + ' / ' + viewerState.items.length +
       (canPlayLive(media) ? ' · 长按照片或点击 LIVE 播放实况' : ''));
     applyScale();
+    if (canPlayLive(media) && !prefersNativeVideo(media)) prepareApplePlayer(currentMedia());
   }
 
-  function playFallbackVideo(media, attemptPlayback) {
+  function playFallbackVideo(media) {
     if (!elements || !canPlayLive(media)) return Promise.resolve();
     if (!fallbackVideo) {
       elements.stage.innerHTML = '';
@@ -368,10 +403,6 @@
       });
       elements.stage.appendChild(fallbackVideo);
     }
-    if (attemptPlayback === false) {
-      setStatus('浏览器播放器已准备好 · 请再次点击 LIVE 播放声音');
-      return Promise.resolve(false);
-    }
     fallbackVideo.muted = false;
     fallbackVideo.volume = 1;
     var playResult = fallbackVideo.play();
@@ -383,51 +414,104 @@
       setStatus('正在使用浏览器播放器播放实况照片');
       return true;
     }).catch(function () {
-      setStatus('请再次点击 LIVE 播放声音，并检查 iPhone 静音模式');
+      setStatus('动态暂时无法播放，请检查 iPhone 静音模式或稍后重试');
       return false;
     });
   }
 
-  function playLive() {
-    var media = currentMedia();
-    if (!canPlayLive(media) || !elements) return Promise.resolve();
-    if (viewerState.appleFailed || prefersNativeVideo(media)) return playFallbackVideo(media, true);
-    setStatus('正在载入实况照片…');
-    return loadLivePhotosKit(elements.document).then(function (kit) {
-      elements.stage.innerHTML = '';
-      var host = elements.document.createElement('div');
-      host.className = 'media-viewer-media media-viewer-live-stage';
-      host.dataset.livePhoto = 'true';
-      elements.stage.appendChild(host);
+  function markAppleHostReady() {
+    if (!applePlayerHost) return;
+    applePlayerHost.classList.remove('is-preparing');
+    var preview = elements && elements.stage.querySelector('.media-viewer-preview');
+    if (preview) preview.classList.add('is-hidden-by-live-player');
+    applyScale();
+  }
+
+  function handleAppleFailure(media, attemptFallback) {
+    viewerState = markAppleFailed(viewerState);
+    pendingApplePlay = false;
+    if (applePlayerHost && applePlayerHost.parentNode) applePlayerHost.remove();
+    applePlayer = null;
+    applePlayerHost = null;
+    applePlayerPromise = null;
+    var preview = elements && elements.stage.querySelector('.media-viewer-preview');
+    if (preview) preview.classList.remove('is-hidden-by-live-player');
+    setStatus('Apple 实况播放器不可用，将使用浏览器兼容播放');
+    return attemptFallback ? playFallbackVideo(media) : Promise.resolve(false);
+  }
+
+  function prepareApplePlayer(media) {
+    if (!elements || !canPlayLive(media) || prefersNativeVideo(media) || viewerState.appleFailed) {
+      return Promise.resolve(null);
+    }
+    if (applePlayer) return Promise.resolve(applePlayer);
+    if (applePlayerPromise) return applePlayerPromise;
+    var generation = playerGeneration;
+    var expectedMedia = media;
+    applePlayerHost = elements.document.createElement('div');
+    applePlayerHost.className = 'media-viewer-media media-viewer-live-stage is-preparing';
+    applePlayerHost.dataset.livePhoto = 'true';
+    elements.stage.appendChild(applePlayerHost);
+    applyScale();
+    applePlayerPromise = loadLivePhotosKit(elements.document).then(function (kit) {
+      if (generation !== playerGeneration || currentMedia() !== expectedMedia) return null;
       try {
-        applePlayer = new kit.Player(host);
+        applePlayer = new kit.Player(applePlayerHost);
       } catch (_) {
-        applePlayer = kit.Player(host);
+        applePlayer = kit.Player(applePlayerHost);
       }
-      applePlayer.photoSrc = media.url;
-      applePlayer.videoSrc = media.motion_url;
-      if (kit.PlaybackStyle && kit.PlaybackStyle.FULL) applePlayer.playbackStyle = kit.PlaybackStyle.FULL;
+      configureApplePlayer(applePlayer, media, kit);
       if (typeof applePlayer.addEventListener === 'function') {
+        ['photoload', 'canplay'].forEach(function(eventName) {
+          applePlayer.addEventListener(eventName, markAppleHostReady, { once: true });
+        });
         applePlayer.addEventListener('error', function () {
-          viewerState = markAppleFailed(viewerState);
-          playFallbackVideo(media, false);
+          if (generation === playerGeneration) handleAppleFailure(media, pendingApplePlay);
         }, { once: true });
         applePlayer.addEventListener('ended', function () {
           setStatus('实况播放完毕 · 可再次长按或点击 LIVE');
         });
       }
-      setStatus('正在使用 Apple 实况播放器');
-      var playResult = applePlayer.play();
-      if (playResult && typeof playResult.catch === 'function') {
-        return playResult.catch(function () {
-          viewerState = markAppleFailed(viewerState);
-          return playFallbackVideo(media, false);
-        });
-      }
-      return playResult;
+      return applePlayer;
     }).catch(function () {
-      viewerState = markAppleFailed(viewerState);
-      return playFallbackVideo(media, false);
+      if (generation !== playerGeneration) return null;
+      return handleAppleFailure(media, pendingApplePlay);
+    });
+    return applePlayerPromise;
+  }
+
+  function startApplePlayback(media) {
+    if (!applePlayer || currentMedia() !== media) return Promise.resolve(false);
+    pendingApplePlay = false;
+    setStatus('正在使用 Apple 实况播放器');
+    var playResult;
+    try {
+      playResult = applePlayer.play();
+    } catch (_) {
+      return handleAppleFailure(media, true);
+    }
+    if (playResult && typeof playResult.then === 'function') {
+      return playResult.then(function () {
+        markAppleHostReady();
+        return true;
+      }).catch(function () {
+        return handleAppleFailure(media, true);
+      });
+    }
+    markAppleHostReady();
+    return Promise.resolve(true);
+  }
+
+  function playLive() {
+    var media = currentMedia();
+    if (!canPlayLive(media) || !elements) return Promise.resolve();
+    if (viewerState.appleFailed || prefersNativeVideo(media)) return playFallbackVideo(media);
+    if (applePlayer) return startApplePlayback(media);
+    pendingApplePlay = true;
+    setStatus('正在载入实况照片…');
+    return prepareApplePlayer(media).then(function (player) {
+      if (!player || !pendingApplePlay || currentMedia() !== media) return false;
+      return startApplePlayback(media);
     });
   }
 
@@ -452,7 +536,7 @@
   function close() {
     if (!elements) return;
     resetGestureState();
-    stopPlayback();
+    disposePlayback();
     if (elements.dialog.open && typeof elements.dialog.close === 'function') elements.dialog.close();
     else elements.dialog.removeAttribute('open');
     if (returnFocus && typeof returnFocus.focus === 'function') returnFocus.focus();
@@ -525,7 +609,7 @@
       holdPlaying = false;
       if (viewerState.appleFailed || prefersNativeVideo(currentMedia())) {
         holdPlaying = true;
-        playFallbackVideo(currentMedia(), true);
+        playFallbackVideo(currentMedia());
         return;
       }
       holdTimer = root.setTimeout(function () {
@@ -565,9 +649,10 @@
           elements.stage.classList.remove('is-gesturing');
         }
         if (holdPlaying) {
+          var usedFallback = !!fallbackVideo;
           holdPlaying = false;
           stopPlayback();
-          renderCurrent();
+          if (usedFallback) renderCurrent();
         }
         if (activePointers.size === 1) {
           var remaining = activePointers.entries().next().value;
@@ -678,6 +763,7 @@
     canPlayLive: canPlayLive,
     prefersNativeVideo: prefersNativeVideo,
     configureFallbackVideo: configureFallbackVideo,
+    configureApplePlayer: configureApplePlayer,
     motionAttachmentState: motionAttachmentState,
     configureMotionAttachment: configureMotionAttachment,
     markAppleFailed: markAppleFailed,

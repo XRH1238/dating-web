@@ -104,6 +104,16 @@ test('浏览器回退播放器隐藏控制条并主动启用声音', () => {
   assert.equal(video.playsInline, true);
 });
 
+test('Apple 播放器主动预加载且隐藏 Apple 自带控制层', () => {
+  const player = {};
+  Viewer.configureApplePlayer(player, { url: 'a.jpg', motion_url: 'a.mov' }, { PlaybackStyle: { FULL: 'full' } });
+  assert.equal(player.photoSrc, 'a.jpg');
+  assert.equal(player.videoSrc, 'a.mov');
+  assert.equal(player.proactivelyLoadsVideo, true);
+  assert.equal(player.showsNativeControls, false);
+  assert.equal(player.playbackStyle, 'full');
+});
+
 test('补充动态和不同名自动配对的视频直接使用浏览器播放器', () => {
   assert.equal(Viewer.prefersNativeVideo({ motion_path: 'city/123-motion-clip.mov' }), true);
   assert.equal(Viewer.prefersNativeVideo({ motionPlayback: 'video', motion_url: 'clip.mov' }), true);

@@ -6,6 +6,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const script = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 
 test('实况模块在主脚本前加载且三个入口提供说明', () => {
   assert.match(html, /<script src="live-photo\.js\?v=[^"]+"><\/script>/);
@@ -68,23 +69,47 @@ test('图片渲染为高清查看按钮且实况照片带 LIVE 标记', () => {
   assert.match(script, /MediaViewer\.open/);
 });
 
+test('HEIC 实况照片使用无控制条的 MOV 帧作为相册预览', () => {
+  assert.match(script, /LivePhotoMedia\.previewMode\(media\)/);
+  assert.match(script, /class="live-photo-motion-preview"/);
+  assert.match(script, /muted playsinline preload="metadata"/);
+  assert.match(script, /data-live-preview/);
+  assert.doesNotMatch(script, /live-photo-motion-preview[^>]*controls/);
+});
+
+test('动态预览加载失败时显示明确占位而不是黑色卡片', () => {
+  assert.match(script, /实况预览暂不可用/);
+  assert.match(script, /addEventListener\("error"/);
+  assert.match(styles, /\.live-photo-motion-preview[\s\S]*pointer-events:\s*none/);
+  assert.match(styles, /\.live-photo-preview-error[\s\S]*background:\s*#2f2730/);
+});
+
 test('Apple 播放失败调用原生视频回退', () => {
   const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
   assert.match(viewer, /loadLivePhotosKit/);
   assert.match(viewer, /addEventListener\(['"]error/);
   assert.match(viewer, /playFallbackVideo/);
-  assert.match(viewer, /image\.draggable\s*=\s*false/);
+  assert.match(viewer, /preview\.draggable\s*=\s*false/);
   assert.match(viewer, /addEventListener\(['"]dragstart['"]/);
   assert.match(viewer, /event\.key === ['"]Escape['"][\s\S]*close\(\)/);
 });
 
-test('回退播放器不显示进度条且播放失败会提示再次点击 LIVE', () => {
+test('回退播放器不显示进度条且不会要求再次点击 LIVE', () => {
   const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
   assert.match(viewer, /video\.controls\s*=\s*false/);
   assert.match(viewer, /video\.muted\s*=\s*false/);
   assert.match(viewer, /video\.volume\s*=\s*1/);
-  assert.match(viewer, /请再次点击 LIVE/);
+  assert.doesNotMatch(viewer, /请再次点击 LIVE/);
   assert.doesNotMatch(viewer, /video\.controls\s*=\s*true/);
+});
+
+test('打开查看器时预创建 Apple Player，首次手势可排队播放', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /function prepareApplePlayer\(media\)/);
+  assert.match(viewer, /prepareApplePlayer\(currentMedia\(\)\)/);
+  assert.match(viewer, /pendingApplePlay\s*=\s*true/);
+  assert.match(viewer, /proactivelyLoadsVideo\s*=\s*true/);
+  assert.match(viewer, /showsNativeControls\s*=\s*false/);
 });
 
 test('查看器监听双指、Mac 触控板和 Safari 缩放手势', () => {
@@ -104,10 +129,10 @@ test('双指开始会取消实况照片长按并进入无过渡手势状态', ()
 });
 
 test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
-  assert.match(html, /live-photo\.js\?v=20260915-2/);
-  assert.match(html, /media-viewer\.js\?v=20260915-2/);
+  assert.match(html, /live-photo\.js\?v=20260922-1/);
+  assert.match(html, /media-viewer\.js\?v=20260922-1/);
   ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-2'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260922-1'));
   });
 });
 
