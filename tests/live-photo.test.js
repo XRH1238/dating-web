@@ -35,6 +35,31 @@ test('未匹配 MOV 保持普通视频并被报告', () => {
   assert.equal(result.unmatchedMotionCount, 1);
 });
 
+test('单独选择一张照片和一个不同名视频时自动配对为浏览器播放', () => {
+  const result = LivePhoto.selectMedia([
+    file('IMG_5640.HEIC', 'image/heic'),
+    file('IMG_5641.MOV', 'video/quicktime'),
+  ], 0, 20);
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].kind, 'live-photo');
+  assert.equal(result.items[0].motionPlayback, 'video');
+  assert.equal(result.pairedCount, 1);
+  assert.equal(result.unmatchedMotionCount, 0);
+});
+
+test('批量选择多个不同名文件时不会猜测错误配对', () => {
+  const result = LivePhoto.selectMedia([
+    file('first.jpg', 'image/jpeg'),
+    file('second.jpg', 'image/jpeg'),
+    file('clip.mov', 'video/quicktime'),
+  ], 0, 20);
+
+  assert.deepEqual(result.items.map(item => item.kind), ['image', 'image', 'video']);
+  assert.equal(result.pairedCount, 0);
+  assert.equal(result.unmatchedMotionCount, 1);
+});
+
 test('不支持的文件会被忽略并计数', () => {
   const result = LivePhoto.selectMedia([file('notes.txt', 'text/plain')], 0, 20);
   assert.deepEqual(result.items, []);

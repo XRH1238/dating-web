@@ -43,6 +43,7 @@ test('实况照片上传双资源并保存完整引用', () => {
   assert.match(script, /motion_path:/);
   assert.match(script, /motion_url:/);
   assert.match(script, /云端尚未启用实况照片字段/);
+  assert.match(script, /motionPlayback\s*===\s*["']video["']/);
 });
 
 test('待同步的本地实况照片会同时上传两份资源', () => {
@@ -77,6 +78,15 @@ test('Apple 播放失败调用原生视频回退', () => {
   assert.match(viewer, /event\.key === ['"]Escape['"][\s\S]*close\(\)/);
 });
 
+test('回退播放器不显示进度条且播放失败会提示再次点击 LIVE', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /video\.controls\s*=\s*false/);
+  assert.match(viewer, /video\.muted\s*=\s*false/);
+  assert.match(viewer, /video\.volume\s*=\s*1/);
+  assert.match(viewer, /请再次点击 LIVE/);
+  assert.doesNotMatch(viewer, /video\.controls\s*=\s*true/);
+});
+
 test('查看器监听双指、Mac 触控板和 Safari 缩放手势', () => {
   const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
   assert.match(viewer, /activePointers\s*=\s*new Map/);
@@ -94,10 +104,10 @@ test('双指开始会取消实况照片长按并进入无过渡手势状态', ()
 });
 
 test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
-  assert.match(html, /live-photo\.js\?v=20260915-1/);
-  assert.match(html, /media-viewer\.js\?v=20260915-1/);
+  assert.match(html, /live-photo\.js\?v=20260915-2/);
+  assert.match(html, /media-viewer\.js\?v=20260915-2/);
   ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-1'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-2'));
   });
 });
 

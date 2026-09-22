@@ -140,6 +140,20 @@
     return !!(media && kind === 'live-photo' && media.url && media.motion_url);
   }
 
+  function prefersNativeVideo(media) {
+    return !!(media && (media.motionPlayback === 'video' || /-motion-/i.test(String(media.motion_path || ''))));
+  }
+
+  function configureFallbackVideo(video) {
+    video.controls = false;
+    video.muted = false;
+    video.defaultMuted = false;
+    video.volume = 1;
+    video.playsInline = true;
+    video.setAttribute && video.setAttribute('playsinline', '');
+    return video;
+  }
+
   function motionAttachmentState(media, canAttach, busy) {
     var visible = typeof canAttach === 'function' && !!canAttach(media);
     return { visible: visible, disabled: visible && !!busy };
@@ -339,28 +353,45 @@
     applyScale();
   }
 
-  function playFallbackVideo(media) {
+  function playFallbackVideo(media, attemptPlayback) {
     if (!elements || !canPlayLive(media)) return Promise.resolve();
-    elements.stage.innerHTML = '';
-    var video = elements.document.createElement('video');
-    video.className = 'media-viewer-media';
-    video.src = media.motion_url;
-    video.poster = media.url;
-    video.playsInline = true;
-    video.controls = true;
-    video.draggable = false;
-    video.preload = 'metadata';
-    elements.stage.appendChild(video);
-    fallbackVideo = video;
-    setStatus('正在使用浏览器播放器播放实况照片');
-    var playResult = video.play();
-    return playResult && typeof playResult.catch === 'function' ? playResult.catch(function () {}) : Promise.resolve();
+    if (!fallbackVideo) {
+      elements.stage.innerHTML = '';
+      fallbackVideo = configureFallbackVideo(elements.document.createElement('video'));
+      fallbackVideo.className = 'media-viewer-media';
+      fallbackVideo.src = media.motion_url;
+      fallbackVideo.poster = media.url;
+      fallbackVideo.draggable = false;
+      fallbackVideo.preload = 'metadata';
+      fallbackVideo.addEventListener('ended', function () {
+        setStatus('实况播放完毕 · 可再次长按或点击 LIVE');
+      });
+      elements.stage.appendChild(fallbackVideo);
+    }
+    if (attemptPlayback === false) {
+      setStatus('浏览器播放器已准备好 · 请再次点击 LIVE 播放声音');
+      return Promise.resolve(false);
+    }
+    fallbackVideo.muted = false;
+    fallbackVideo.volume = 1;
+    var playResult = fallbackVideo.play();
+    if (!playResult || typeof playResult.then !== 'function') {
+      setStatus('正在使用浏览器播放器播放实况照片');
+      return Promise.resolve(true);
+    }
+    return playResult.then(function () {
+      setStatus('正在使用浏览器播放器播放实况照片');
+      return true;
+    }).catch(function () {
+      setStatus('请再次点击 LIVE 播放声音，并检查 iPhone 静音模式');
+      return false;
+    });
   }
 
   function playLive() {
     var media = currentMedia();
     if (!canPlayLive(media) || !elements) return Promise.resolve();
-    if (viewerState.appleFailed) return playFallbackVideo(media);
+    if (viewerState.appleFailed || prefersNativeVideo(media)) return playFallbackVideo(media, true);
     setStatus('正在载入实况照片…');
     return loadLivePhotosKit(elements.document).then(function (kit) {
       elements.stage.innerHTML = '';
@@ -379,7 +410,7 @@
       if (typeof applePlayer.addEventListener === 'function') {
         applePlayer.addEventListener('error', function () {
           viewerState = markAppleFailed(viewerState);
-          playFallbackVideo(media);
+          playFallbackVideo(media, false);
         }, { once: true });
         applePlayer.addEventListener('ended', function () {
           setStatus('实况播放完毕 · 可再次长按或点击 LIVE');
@@ -390,13 +421,13 @@
       if (playResult && typeof playResult.catch === 'function') {
         return playResult.catch(function () {
           viewerState = markAppleFailed(viewerState);
-          return playFallbackVideo(media);
+          return playFallbackVideo(media, false);
         });
       }
       return playResult;
     }).catch(function () {
       viewerState = markAppleFailed(viewerState);
-      return playFallbackVideo(media);
+      return playFallbackVideo(media, false);
     });
   }
 
@@ -492,6 +523,11 @@
       beginDrag(event.pointerId, point);
       if (!canPlayLive(currentMedia())) return;
       holdPlaying = false;
+      if (viewerState.appleFailed || prefersNativeVideo(currentMedia())) {
+        holdPlaying = true;
+        playFallbackVideo(currentMedia(), true);
+        return;
+      }
       holdTimer = root.setTimeout(function () {
         holdTimer = null;
         holdPlaying = true;
@@ -640,6 +676,8 @@
     zoomAroundPoint: zoomAroundPoint,
     applyPinchGesture: applyPinchGesture,
     canPlayLive: canPlayLive,
+    prefersNativeVideo: prefersNativeVideo,
+    configureFallbackVideo: configureFallbackVideo,
     motionAttachmentState: motionAttachmentState,
     configureMotionAttachment: configureMotionAttachment,
     markAppleFailed: markAppleFailed,
