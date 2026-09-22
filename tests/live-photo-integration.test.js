@@ -89,18 +89,27 @@ test('Apple 播放失败调用原生视频回退', () => {
   assert.match(viewer, /loadLivePhotosKit/);
   assert.match(viewer, /addEventListener\(['"]error/);
   assert.match(viewer, /playFallbackVideo/);
-  assert.match(viewer, /image\.draggable\s*=\s*false/);
+  assert.match(viewer, /preview\.draggable\s*=\s*false/);
   assert.match(viewer, /addEventListener\(['"]dragstart['"]/);
   assert.match(viewer, /event\.key === ['"]Escape['"][\s\S]*close\(\)/);
 });
 
-test('回退播放器不显示进度条且播放失败会提示再次点击 LIVE', () => {
+test('回退播放器不显示进度条且不会要求再次点击 LIVE', () => {
   const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
   assert.match(viewer, /video\.controls\s*=\s*false/);
   assert.match(viewer, /video\.muted\s*=\s*false/);
   assert.match(viewer, /video\.volume\s*=\s*1/);
-  assert.match(viewer, /请再次点击 LIVE/);
+  assert.doesNotMatch(viewer, /请再次点击 LIVE/);
   assert.doesNotMatch(viewer, /video\.controls\s*=\s*true/);
+});
+
+test('打开查看器时预创建 Apple Player，首次手势可排队播放', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /function prepareApplePlayer\(media\)/);
+  assert.match(viewer, /prepareApplePlayer\(currentMedia\(\)\)/);
+  assert.match(viewer, /pendingApplePlay\s*=\s*true/);
+  assert.match(viewer, /proactivelyLoadsVideo\s*=\s*true/);
+  assert.match(viewer, /showsNativeControls\s*=\s*false/);
 });
 
 test('查看器监听双指、Mac 触控板和 Safari 缩放手势', () => {

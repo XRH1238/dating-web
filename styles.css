@@ -3131,6 +3131,15 @@ textarea {
   transition: none;
 }
 
+.media-viewer-live-stage.is-preparing {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.media-viewer-preview.is-hidden-by-live-player {
+  visibility: hidden;
+}
+
 .media-viewer button {
   min-width: 44px;
   min-height: 44px;
