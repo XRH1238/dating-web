@@ -6,6 +6,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const script = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 
 test('实况模块在主脚本前加载且三个入口提供说明', () => {
   assert.match(html, /<script src="live-photo\.js\?v=[^"]+"><\/script>/);
@@ -66,6 +67,21 @@ test('图片渲染为高清查看按钮且实况照片带 LIVE 标记', () => {
   assert.match(script, /data-media-viewer-index/);
   assert.match(script, /live-photo-badge/);
   assert.match(script, /MediaViewer\.open/);
+});
+
+test('HEIC 实况照片使用无控制条的 MOV 帧作为相册预览', () => {
+  assert.match(script, /LivePhotoMedia\.previewMode\(media\)/);
+  assert.match(script, /class="live-photo-motion-preview"/);
+  assert.match(script, /muted playsinline preload="metadata"/);
+  assert.match(script, /data-live-preview/);
+  assert.doesNotMatch(script, /live-photo-motion-preview[^>]*controls/);
+});
+
+test('动态预览加载失败时显示明确占位而不是黑色卡片', () => {
+  assert.match(script, /实况预览暂不可用/);
+  assert.match(script, /addEventListener\("error"/);
+  assert.match(styles, /\.live-photo-motion-preview[\s\S]*pointer-events:\s*none/);
+  assert.match(styles, /\.live-photo-preview-error[\s\S]*background:\s*#2f2730/);
 });
 
 test('Apple 播放失败调用原生视频回退', () => {

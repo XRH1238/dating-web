@@ -1533,6 +1533,7 @@ async function renderRecordMediaPreview() {
       '<button class="record-media-remove" type="button" data-remove-new-record-media="' + index + '" aria-label="移除待上传媒体">×</button></div>';
   }).join("");
   target.innerHTML = existingMarkup + draftMarkup;
+  prepareLivePhotoPreviews(target);
 }
 
 function removeExistingRecordMedia(index) {
@@ -1864,17 +1865,39 @@ function mediaElementMarkup(media, alt, preview, index) {
   var url = escapeHtml((media && media.url) || "");
   var label = escapeHtml(alt || "媒体文件");
   var isLive = window.MediaViewer.canPlayLive(media);
+  var previewMedia = isLive && window.LivePhotoMedia.previewMode(media) === "motion"
+    ? '<video class="live-photo-motion-preview" src="' + escapeHtml(media.motion_url) +
+      '" muted playsinline preload="metadata" data-live-preview aria-label="' + label + '"></video>'
+    : '<img src="' + url + '" alt="' + label + '" loading="lazy" decoding="async" />';
   if (window.MediaUpload.isVideo(media) && !isLive) {
     return '<video src="' + url + '" controls preload="metadata" aria-label="' + label + '"></video>';
   }
   if (preview) {
-    return '<span class="media-preview-item"><img src="' + url + '" alt="' + label + '" />' +
+    return '<span class="media-preview-item">' + previewMedia +
       (isLive ? '<span class="live-photo-badge" aria-hidden="true">◉ LIVE</span>' : '') + '</span>';
   }
   return '<button class="media-viewer-trigger" type="button" data-media-viewer-index="' + (Number(index) || 0) +
     '" aria-label="' + (isLive ? '查看实况照片：' : '查看高清照片：') + label + '">' +
-    '<img src="' + url + '" alt="' + label + '" loading="lazy" decoding="async" />' +
+    previewMedia +
     (isLive ? '<span class="live-photo-badge" aria-hidden="true">◉ LIVE</span>' : '') + '</button>';
+}
+
+function prepareLivePhotoPreviews(container) {
+  if (!container) return;
+  container.querySelectorAll('[data-live-preview]').forEach(function(video) {
+    video.addEventListener("loadeddata", function() {
+      try {
+        var duration = Number.isFinite(video.duration) ? video.duration : 0;
+        video.currentTime = Math.min(0.05, Math.max(0, duration));
+      } catch (_) {}
+    }, { once: true });
+    video.addEventListener("error", function() {
+      var placeholder = document.createElement("span");
+      placeholder.className = "live-photo-preview-error";
+      placeholder.textContent = "实况预览暂不可用";
+      video.replaceWith(placeholder);
+    }, { once: true });
+  });
 }
 
 async function renderFilePreview(files, selector) {
@@ -1884,6 +1907,7 @@ async function renderFilePreview(files, selector) {
   target.innerHTML = media.map(function(item, index) {
     return mediaElementMarkup(item, "待上传媒体 " + (index + 1), true);
   }).join("");
+  prepareLivePhotoPreviews(target);
 }
 
 async function submitRecordForm(event) {
@@ -2059,6 +2083,7 @@ function editCapsule(index) {
   document.querySelector("#capsule-photo-preview").innerHTML = capsuleExistingPhotos.map(function(photo) {
     return mediaElementMarkup(photo, "胶囊媒体", true);
   }).join("");
+  prepareLivePhotoPreviews(document.querySelector("#capsule-photo-preview"));
   openPanelById(capsulePanel);
 }
 
@@ -2488,6 +2513,7 @@ function renderRecords() {
         return mediaElementMarkup(photo, photo.name || r.title || "旅行媒体", false, viewerItems.indexOf(photo));
       }).join("") + '</div>' : '') + '</article>';
   }).join("");
+  prepareLivePhotoPreviews(list);
   var recordMediaGroups = records.filter(function(record) { return record.photos.length; });
   list.querySelectorAll(".story-photos").forEach(function(group, index) {
     registerMediaViewerGroup(group, recordMediaGroups[index].photos);
@@ -2520,6 +2546,7 @@ function renderCapsules() {
   target.querySelectorAll(".capsule-photos").forEach(function(group, index) {
     registerMediaViewerGroup(group, capsuleMediaGroups[index]);
   });
+  prepareLivePhotoPreviews(target);
   var newCapsuleButton = target.querySelector("[data-new-capsule]");
   if (newCapsuleButton) newCapsuleButton.addEventListener("click", function() { if (!requireAuthenticated()) return; editingCapsuleIndex = -1; capsuleForm.reset(); capsuleDraftFiles = []; capsuleExistingPhotos = []; openPanelById(capsulePanel); });
   target.querySelectorAll("[data-edit-capsule]").forEach(function(button) { button.addEventListener("click", function() { editCapsule(parseInt(button.dataset.editCapsule)); }); });
@@ -2598,6 +2625,7 @@ function renderPhotos() {
       '" aria-label="删除相册媒体：' + escapeHtml(label) + '"' + deleteDisabled + '><img src="assets/icons/trash.svg" alt="" /></button>' : '';
     return '<figure>' + mediaElementMarkup(p, label, false, viewerItems.indexOf(p)) + deleteButton + '</figure>';
   }).join("");
+  prepareLivePhotoPreviews(grid);
   registerMediaViewerGroup(grid, state.photos);
   grid.querySelectorAll("[data-delete-gallery-photo]").forEach(function(button) {
     button.addEventListener("click", function() { deleteGalleryPhoto(parseInt(button.dataset.deleteGalleryPhoto)); });
