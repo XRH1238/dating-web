@@ -333,4 +333,66 @@ git commit -m "chore: refresh live photo browser assets"
 
 - [ ] **步骤 7：记录最终开发位置**
 
-最终回复注明功能名称、分支 `codex/live-photo-attach-motion`、未合并/未推送/未发布，以及完整工作区 `/Users/xie/Documents/恋爱网站/.worktrees/live-photo-attach-motion`。
+最终回复注明功能名称、分支 `codex/live-photo-one-tap-fix`、未合并/未推送/未发布，以及完整工作区 `/Users/xie/Documents/恋爱网站`。
+
+### 任务 5：修正 HEIC Apple Player 的首次手势播放
+
+**文件：**
+- 修改：`tests/media-viewer.test.js`
+- 修改：`tests/live-photo-integration.test.js`
+- 修改：`media-viewer.js`
+- 修改：`index.html`
+
+- [x] **步骤 1：编写失败的 HEIC Player 配置测试**
+
+在 `tests/media-viewer.test.js` 增加测试，要求 HEIC 媒体使用传入画布作为 `player.photo`，且不设置 `player.photoSrc`；JPG 媒体继续使用 URL：
+
+```js
+test('HEIC Apple 播放器使用兼容画布而不是不可解码的 photoSrc', () => {
+  const canvas = { nodeName: 'CANVAS' };
+  const player = {};
+  Viewer.configureApplePlayer(
+    player,
+    { name: 'IMG_1.HEIC', url: 'a.heic', motion_url: 'a.mov' },
+    { PlaybackStyle: { FULL: 'full' } },
+    canvas
+  );
+  assert.equal(player.photo, canvas);
+  assert.equal(player.photoSrc, undefined);
+  assert.equal(player.videoSrc, 'a.mov');
+});
+```
+
+在 `tests/live-photo-integration.test.js` 增加契约断言：播放器包含从 MOV 提取画布帧的 `createLivePhotoPoster`，且 HEIC Player 在创建前等待该画布。
+
+- [x] **步骤 2：运行测试并确认正确失败**
+
+运行：
+
+```bash
+/Users/xie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test tests/media-viewer.test.js tests/live-photo-integration.test.js
+```
+
+预期：FAIL，`player.photo` 尚未赋值，源码也不存在 `createLivePhotoPoster`。
+
+- [x] **步骤 3：实现最少的 MOV 静态帧提取与 Player 配置**
+
+在 `media-viewer.js` 增加 `needsCompatibleApplePhoto(media)` 与 `createLivePhotoPoster(media, documentRef)`。后者创建临时 `<video>`，在 `loadeddata` 后绘制到 `<canvas>` 并返回画布；在 `error` 时 reject，并在完成后移除 `src`、调用 `load()` 释放媒体资源。
+
+将 `configureApplePlayer` 扩展为接收 `compatiblePhoto`：HEIC/HEIF 时赋给 `player.photo`，其他格式仍赋给 `player.photoSrc`。`prepareApplePlayer` 在创建 Player 前等待画布；帧提取失败时调用现有 `handleAppleFailure(media, false)`，确保第一次用户手势直接走已准备的回退播放器。
+
+- [x] **步骤 4：运行相关测试并确认通过**
+
+运行步骤 2 的命令，预期全部 PASS。
+
+- [x] **步骤 5：更新播放器缓存版本并运行全量验证**
+
+把 `index.html` 的 `media-viewer.js` 版本更新为 `20260923-1`，同步测试断言，然后运行：
+
+```bash
+/Users/xie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --test tests/*.test.js
+/Users/xie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node --check media-viewer.js
+git diff --check
+```
+
+预期：355 项基线测试与新增测试全部 PASS，语法检查和 diff 检查退出码均为 0。

@@ -47,9 +47,18 @@
 ### 打开查看器
 
 - 当前媒体为实况照片时立即异步加载 LivePhotosKit。
-- 创建固定尺寸的 Apple Player 容器，设置 `photoSrc`、`videoSrc`、`proactivelyLoadsVideo = true`、`showsNativeControls = false` 与完整播放样式。
+- 创建固定尺寸的 Apple Player 容器。普通 JPG/PNG 继续设置 `photoSrc`；HEIC/HEIF 则先从对应 MOV 解码一个静态帧画布并赋给 Player 的 `photo`，避免 Apple Player 因网页环境不能解码 HEIC 而异步失败。
+- 设置 `videoSrc`、`proactivelyLoadsVideo = true`、`showsNativeControls = false` 与完整播放样式。
 - 保持兼容预览可见，直到 Apple Player 发出 `photoload` 或 `canplay`，避免加载阶段黑屏。
 - 预加载只针对当前打开的实况照片，不在相册首页批量下载所有 MOV。
+
+### HEIC 兼容静态画面
+
+- 使用一个不显示控制条、静音且 `playsinline` 的临时视频读取当前 MOV 的首个可解码帧。
+- 将视频帧绘制到与视频固有尺寸一致的 `<canvas>`，把该画布交给 LivePhotosKit Player 的 `photo` 属性；不上传、不持久化生成的画布。
+- 临时视频设置 `crossOrigin = "anonymous"`，并在成功或失败后立即释放事件监听和媒体资源。
+- 如果帧提取失败，当前媒体直接标记为 Apple 不可用；失败状态确定后的下一次点击会同步进入浏览器视频回退，不再先经历一次必然失败的 Apple 播放。
+- 原始 HEIC 与 MOV URL、文件和云端记录均保持不变。
 
 ### 第一次点击或长按
 
@@ -100,12 +109,14 @@
 2. 相册渲染的视频预览无控制条、静音、行内播放并停在可显示帧。
 3. 查看器打开实况照片时即开始创建 Apple Player，而不是等首次点击。
 4. Apple Player 配置预加载且隐藏原生控制条。
-5. 第一次点击 `LIVE` 直接调用 Apple Player `play()`。
-6. 第一次长按直接调用已准备的 Apple Player，不需要先点击初始化。
-7. Apple 明确错误后浏览器回退无进度条且不显示二次确认声音文案。
-8. 快速切换或关闭时旧播放器不会继续播放。
-9. 完整 Node 测试、JavaScript 语法检查与 `git diff --check` 全部通过。
-10. Codex 内置浏览器分别验证桌面和 390 × 844 手机尺寸：相册预览可见、首次点击播放、首次长按播放、无横向溢出、控制台无错误。
+5. HEIC/HEIF 实况照片使用 MOV 解码帧配置 Player 的 `photo`，不再把 HEIC URL 写入 `photoSrc`。
+6. 帧提取失败时在首次用户操作前进入浏览器回退状态。
+7. 第一次点击 `LIVE` 直接调用 Apple Player `play()`。
+8. 第一次长按直接调用已准备的 Apple Player，不需要先点击初始化。
+9. Apple 明确错误后浏览器回退无进度条且不显示二次确认声音文案。
+10. 快速切换或关闭时旧播放器不会继续播放。
+11. 完整 Node 测试、JavaScript 语法检查与 `git diff --check` 全部通过。
+12. Codex 内置浏览器分别验证桌面和 390 × 844 手机尺寸：相册预览可见、首次点击播放、首次长按播放、无横向溢出、控制台无错误。
 
 ## 范围之外
 
