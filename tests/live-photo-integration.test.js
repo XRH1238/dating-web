@@ -112,6 +112,15 @@ test('打开查看器时预创建 Apple Player，首次手势可排队播放', (
   assert.match(viewer, /showsNativeControls\s*=\s*false/);
 });
 
+test('HEIC Apple Player 先从 MOV 准备兼容静态帧', () => {
+  const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
+  assert.match(viewer, /function createLivePhotoPoster\(media, documentRef\)/);
+  assert.match(viewer, /createElement\(['"]canvas['"]\)/);
+  assert.match(viewer, /drawImage\(video, 0, 0, width, height\)/);
+  assert.match(viewer, /createLivePhotoPoster\(media, elements\.document\)/);
+  assert.match(viewer, /configureApplePlayer\(applePlayer, media, kit, compatiblePhoto\)/);
+});
+
 test('查看器监听双指、Mac 触控板和 Safari 缩放手势', () => {
   const viewer = fs.readFileSync(path.join(root, 'media-viewer.js'), 'utf8');
   assert.match(viewer, /activePointers\s*=\s*new Map/);
@@ -130,7 +139,7 @@ test('双指开始会取消实况照片长按并进入无过渡手势状态', ()
 
 test('查看器保持已验证版本且页面入口使用本次缓存版本', () => {
   assert.match(html, /live-photo\.js\?v=20260922-1/);
-  assert.match(html, /media-viewer\.js\?v=20260922-1/);
+  assert.match(html, /media-viewer\.js\?v=20260923-1/);
   ['styles.css', 'script.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260922-1'));
   });

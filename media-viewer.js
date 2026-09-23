@@ -148,6 +148,71 @@
     return !!(media && (media.motionPlayback === 'video' || /-motion-/i.test(String(media.motion_path || ''))));
   }
 
+  function needsCompatibleApplePhoto(media) {
+    var name = String(media && (media.name || media.url) || '');
+    var type = String(media && media.type || '').toLowerCase();
+    return /\.(heic|heif)(?:$|[?#])/i.test(name) || /image\/hei[cf]/.test(type);
+  }
+
+  function createLivePhotoPoster(media, documentRef) {
+    if (!needsCompatibleApplePhoto(media)) return Promise.resolve(null);
+    if (!media || !media.motion_url || !documentRef || !documentRef.createElement) {
+      return Promise.reject(new Error('无法准备实况照片兼容画面'));
+    }
+    return new Promise(function (resolve, reject) {
+      var video = documentRef.createElement('video');
+      var canvas = documentRef.createElement('canvas');
+      var settled = false;
+
+      function cleanup() {
+        video.removeEventListener('loadeddata', onLoaded);
+        video.removeEventListener('error', onError);
+        if (typeof video.pause === 'function') video.pause();
+        if (typeof video.removeAttribute === 'function') video.removeAttribute('src');
+        if (typeof video.load === 'function') video.load();
+      }
+
+      function finish(callback, value) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        callback(value);
+      }
+
+      function onLoaded() {
+        var width = Math.max(1, Number(video.videoWidth) || 0);
+        var height = Math.max(1, Number(video.videoHeight) || 0);
+        var context = canvas.getContext && canvas.getContext('2d');
+        if (!context || typeof context.drawImage !== 'function') {
+          finish(reject, new Error('浏览器无法生成实况照片兼容画面'));
+          return;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        try {
+          context.drawImage(video, 0, 0, width, height);
+          finish(resolve, canvas);
+        } catch (_) {
+          finish(reject, new Error('实况照片兼容画面生成失败'));
+        }
+      }
+
+      function onError() {
+        finish(reject, new Error('实况照片动态资源无法读取'));
+      }
+
+      video.crossOrigin = 'anonymous';
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+      if (video.setAttribute) video.setAttribute('playsinline', '');
+      video.addEventListener('loadeddata', onLoaded, { once: true });
+      video.addEventListener('error', onError, { once: true });
+      video.src = media.motion_url;
+    });
+  }
+
   function configureFallbackVideo(video) {
     video.controls = false;
     video.muted = false;
@@ -158,8 +223,9 @@
     return video;
   }
 
-  function configureApplePlayer(player, media, kit) {
-    player.photoSrc = media.url;
+  function configureApplePlayer(player, media, kit, compatiblePhoto) {
+    if (needsCompatibleApplePhoto(media)) player.photo = compatiblePhoto;
+    else player.photoSrc = media.url;
     player.videoSrc = media.motion_url;
     player.proactivelyLoadsVideo = true;
     player.showsNativeControls = false;
@@ -453,14 +519,19 @@
     applePlayerHost.dataset.livePhoto = 'true';
     elements.stage.appendChild(applePlayerHost);
     applyScale();
-    applePlayerPromise = loadLivePhotosKit(elements.document).then(function (kit) {
+    applePlayerPromise = Promise.all([
+      loadLivePhotosKit(elements.document),
+      createLivePhotoPoster(media, elements.document),
+    ]).then(function (prepared) {
+      var kit = prepared[0];
+      var compatiblePhoto = prepared[1];
       if (generation !== playerGeneration || currentMedia() !== expectedMedia) return null;
       try {
         applePlayer = new kit.Player(applePlayerHost);
       } catch (_) {
         applePlayer = kit.Player(applePlayerHost);
       }
-      configureApplePlayer(applePlayer, media, kit);
+      configureApplePlayer(applePlayer, media, kit, compatiblePhoto);
       if (typeof applePlayer.addEventListener === 'function') {
         ['photoload', 'canplay'].forEach(function(eventName) {
           applePlayer.addEventListener(eventName, markAppleHostReady, { once: true });
@@ -762,6 +833,8 @@
     applyPinchGesture: applyPinchGesture,
     canPlayLive: canPlayLive,
     prefersNativeVideo: prefersNativeVideo,
+    needsCompatibleApplePhoto: needsCompatibleApplePhoto,
+    createLivePhotoPoster: createLivePhotoPoster,
     configureFallbackVideo: configureFallbackVideo,
     configureApplePlayer: configureApplePlayer,
     motionAttachmentState: motionAttachmentState,

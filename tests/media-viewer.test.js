@@ -114,6 +114,65 @@ test('Apple 播放器主动预加载且隐藏 Apple 自带控制层', () => {
   assert.equal(player.playbackStyle, 'full');
 });
 
+test('HEIC Apple 播放器使用兼容画布而不是不可解码的 photoSrc', () => {
+  const canvas = { nodeName: 'CANVAS' };
+  const player = {};
+
+  Viewer.configureApplePlayer(
+    player,
+    { name: 'IMG_1.HEIC', url: 'a.heic', motion_url: 'a.mov' },
+    { PlaybackStyle: { FULL: 'full' } },
+    canvas
+  );
+
+  assert.equal(Viewer.needsCompatibleApplePhoto({ name: 'IMG_1.HEIC' }), true);
+  assert.equal(Viewer.needsCompatibleApplePhoto({ type: 'image/heif' }), true);
+  assert.equal(Viewer.needsCompatibleApplePhoto({ name: 'IMG_1.JPG' }), false);
+  assert.equal(player.photo, canvas);
+  assert.equal(player.photoSrc, undefined);
+  assert.equal(player.videoSrc, 'a.mov');
+});
+
+test('HEIC 兼容静态画面从 MOV 解码帧并释放临时视频', async () => {
+  const listeners = {};
+  const drawCalls = [];
+  const video = {
+    videoWidth: 4032,
+    videoHeight: 3024,
+    addEventListener(name, handler) { listeners[name] = handler; },
+    removeEventListener(name, handler) {
+      if (listeners[name] === handler) delete listeners[name];
+    },
+    removeAttribute(name) { this.removedAttribute = name; },
+    load() { this.loadCalls = (this.loadCalls || 0) + 1; },
+    setAttribute(name, value) { this[name] = value; },
+  };
+  const canvas = {
+    getContext() {
+      return { drawImage(...args) { drawCalls.push(args); } };
+    },
+  };
+  const documentRef = {
+    createElement(name) {
+      return name === 'video' ? video : canvas;
+    },
+  };
+
+  const posterPromise = Viewer.createLivePhotoPoster(
+    { name: 'IMG_1.HEIC', motion_url: 'a.mov' },
+    documentRef
+  );
+  listeners.loadeddata();
+  const result = await posterPromise;
+
+  assert.equal(result, canvas);
+  assert.equal(canvas.width, 4032);
+  assert.equal(canvas.height, 3024);
+  assert.equal(drawCalls.length, 1);
+  assert.equal(video.removedAttribute, 'src');
+  assert.equal(video.loadCalls, 1);
+});
+
 test('补充动态和不同名自动配对的视频直接使用浏览器播放器', () => {
   assert.equal(Viewer.prefersNativeVideo({ motion_path: 'city/123-motion-clip.mov' }), true);
   assert.equal(Viewer.prefersNativeVideo({ motionPlayback: 'video', motion_url: 'clip.mov' }), true);
