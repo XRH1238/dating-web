@@ -34,12 +34,12 @@ test('路线边界适配确保所有点可见，单城、全国和空数据也�
 });
 
 test('纪念日优先未来；当天显示今日；使用日期差避免时区和夏令时偏差', () => {
-  const milestones = travel.anniversaryMilestones('2025-09-06', '2026-10-13', [300, 365, 520, 666]);
-  assert.equal(milestones.days, 402);
-  assert.equal(milestones.upcoming[0].date, '2027-02-08');
-  assert.equal(milestones.upcoming[0].remaining, 118);
-  assert.deepEqual(milestones.past.map(item => item.target), [365, 300]);
-  const today = travel.anniversaryMilestones('2025-09-06', '2026-09-06', [365, 520]);
+  const milestones = travel.anniversaryMilestones('2024-01-01', '2024-02-01', [30, 45, 60]);
+  assert.equal(milestones.days, 31);
+  assert.equal(milestones.upcoming[0].date, '2024-02-15');
+  assert.equal(milestones.upcoming[0].remaining, 14);
+  assert.deepEqual(milestones.past.map(item => item.target), [30]);
+  const today = travel.anniversaryMilestones('2024-01-01', '2025-01-01', [366, 520]);
   assert.equal(today.upcoming[0].remaining, 0);
   assert.equal(today.past.length, 0);
 });

@@ -10,7 +10,7 @@ const storageConfig = {
 const tables = { plans: "love_plans", records: "love_records", todos: "love_todos", photos: "love_photos", capsules: "love_capsules" };
 const storageBucket = "love-photos";
 const todoPageSize = 10;
-const loveStartDate = "2025-09-06";
+let loveStartDate = null;
 const milestoneDays = [300, 365, 520, 666, 999, 1314];
 
 const transportTypes = ["高铁", "飞机", "自驾", "火车", "轮船", "其他"];
@@ -252,6 +252,7 @@ async function handleAuthStateChange(event, session) {
   if (identityChanged) privateMediaLinks.clear();
   if (identityChanged && hadUser) {
     state.isMember = false;
+    loveStartDate = null;
     state.plans = []; state.records = []; state.todos = []; state.photos = []; state.capsules = [];
     var story = document.querySelector('#trip-story-dialog');
     if (story && story.open) story.close();
@@ -1312,7 +1313,7 @@ async function loadRemoteData() {
 async function loadRemoteDataOnce(loadGeneration) {
   setCloudStatus("loading");
   var coreResults = await Promise.allSettled([fetchPlans(), fetchRecords(), fetchTodos(), fetchPhotos()]);
-  var capsuleResult = await Promise.allSettled([fetchCapsules()]);
+  var capsuleResult = await Promise.allSettled([fetchCapsules(), fetchPrivateAnniversary()]);
   if (loadGeneration !== authMutationGeneration) return;
   if (capsuleResult[0].status === "rejected") state.capsules = [];
   await preparePrivateMedia();
@@ -2466,6 +2467,12 @@ function renderAnniversary() {
   var milestoneList = document.querySelector("#milestone-list");
   var startLabel = document.querySelector("#love-start-date");
   if (!daysEl || !milestoneList) return;
+  if (!loveStartDate || !state.isMember) {
+    daysEl.textContent = '--';
+    if (startLabel) startLabel.textContent = '从相遇变成我们';
+    milestoneList.innerHTML = '<p class="muted">' + (state.isMember ? '纪念日正在加载，请稍后再看。' : '纪念日留在我们的私密空间。') + '</p>';
+    return;
+  }
   var today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   var milestones = window.TravelExperience.anniversaryMilestones(loveStartDate, today, milestoneDays);
   var days = milestones.days;
@@ -3175,6 +3182,14 @@ function updateChinaMapMarkers(visitedCities) {
 }
 
 // ========== Utilities ==========
+async function fetchPrivateAnniversary() {
+  if (!state.isMember) { loveStartDate = null; return; }
+  var generation = authMutationGeneration;
+  var date = await state.client.rpc('get_love_start_date');
+  if (generation !== authMutationGeneration) return;
+  loveStartDate = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
 function visibilityButton(kind, item) {
   if (!state.isMember || !item.id) return '';
   return '<button type="button" class="visibility-toggle" data-visibility-table="' + kind + '" data-visibility-id="' + escapeHtml(item.id) + '">' + (item.is_public ? '公开精选 · 收回' : '仅我们可见 · 设为精选') + '</button>';
@@ -3372,6 +3387,7 @@ function getTravelGroups() {
 }
 
 function bindTravelExperience() {
+  document.querySelector('#anniversary-login').addEventListener('click', function() { showAuthDialog('登录后，查看只属于我们的纪念日。'); });
   var search = document.querySelector('#todo-search');
   if (search) search.addEventListener('input', function() { state.todoSearch = search.value.trim(); state.todoPage = 1; renderTodos(); });
   var category = document.querySelector('#todo-category');

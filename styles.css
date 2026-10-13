@@ -3310,6 +3310,8 @@ textarea {
 
 /* Travel reading, navigation and recoverable media previews. */
 body[data-member="false"] [data-auth-write] { display: none !important; }
+body:not([data-member="true"]) [data-private-read], body:not([data-member="true"]) #love-start-date { display: none !important; }
+body[data-member="true"] .anniversary-login { display: none; }
 .privacy-notice { margin: 0; padding: 12px 20px; color: #75584b; background: #f5eade; font-size: 13px; text-align: center; }
 .visibility-toggle, .gallery-trip-link { min-height: 40px; padding: 8px 10px; border: 1px solid #d7b9a7; border-radius: 6px; background: #fff8ee; color: #80523d; font: inherit; font-size: 12px; cursor: pointer; }
 .story-card-actions, .plan-actions { flex-wrap: wrap; }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20261013-1" />
+    <link rel="stylesheet" href="styles.css?v=20261013-2" />
   </head>
   <body data-authenticated="false">
     <header class="site-header">
@@ -126,10 +126,11 @@
           </div>
           <span class="soft-note" id="love-start-date">从相遇变成我们</span>
         </div>
-        <div class="anniversary-layout">
+        <button class="ghost-button anniversary-login" type="button" id="anniversary-login">登录后查看我们的纪念日</button>
+        <div class="anniversary-layout" data-private-read>
           <article class="days-card">
             <span>我们已经在一起</span>
-            <strong id="love-days">262</strong>
+            <strong id="love-days">--</strong>
             <p>天</p>
           </article>
           <div class="anniversary-board">
@@ -522,6 +523,6 @@
       <form id="gallery-trip-form"><label for="gallery-trip-select">选择旅行</label><select id="gallery-trip-select" name="trip_key"><option value="">暂不关联</option></select><p id="gallery-trip-status" role="status"></p><button class="button primary" type="submit">保存关联</button></form>
     </dialog>
     <script src="travel-experience.js?v=20261013-1"></script>
-    <script src="script.js?v=20261013-1"></script>
+    <script src="script.js?v=20261013-2"></script>
   </body>
 </html>

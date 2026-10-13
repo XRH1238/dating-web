@@ -62,7 +62,8 @@ function privacyHarness() {
   vm.runInContext(fs.readFileSync(require.resolve('../script.js'), 'utf8') + `
     updateAuthUi = function() {}; renderAll = function() {}; setCloudStatus = function() {}; showCloudNotice = function() {};
     globalThis.privacy = { setState(next) { Object.assign(state, next); }, getState() { return state; },
-      preparePrivateSpace, loadRemoteData, visibleRows, connectPrivateStores, privateMediaUrl, fetchRecords };
+      preparePrivateSpace, loadRemoteData, visibleRows, connectPrivateStores, privateMediaUrl, fetchRecords,
+      fetchPrivateAnniversary, getStartDate() { return loveStartDate; } };
   `, context);
   return context;
 }
@@ -91,4 +92,16 @@ test('成员与游客使用分开的缓存，未取得签名时不会返回旧�
   assert.deepEqual(keys, ['dating-web:data:private:v2:first', 'dating-web:data:private:v2:public']);
   assert.equal(context.privacy.privateMediaUrl('https://msrbqgorhjbzxomexzap.supabase.co/storage/v1/object/public/love-photos/records/private.jpg'), '');
   assert.equal(context.privacy.privateMediaUrl('data:image/jpeg;base64,test'), 'data:image/jpeg;base64,test');
+});
+
+test('纪念日起始日期从成员配置读取，游客不请求并清除该日期', async () => {
+  const context = privacyHarness();
+  let calls = 0;
+  context.privacy.setState({ isMember: true, client: { async rpc(name) { assert.equal(name, 'get_love_start_date'); calls += 1; return '2024-01-01'; } } });
+  await context.privacy.fetchPrivateAnniversary();
+  assert.equal(context.privacy.getStartDate(), '2024-01-01');
+  context.privacy.setState({ isMember: false });
+  await context.privacy.fetchPrivateAnniversary();
+  assert.equal(context.privacy.getStartDate(), null);
+  assert.equal(calls, 1);
 });
