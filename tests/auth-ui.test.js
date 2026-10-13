@@ -46,6 +46,12 @@ function createScriptHarness(overrides = {}) {
   context.window.confirm = function() { return true; };
   context.window.localStorage = null;
   Object.assign(context.window, overrides.window || {});
+  if (context.window.CloudDataClient && context.window.CloudDataClient.createCloudDataClient) {
+    const createClient = context.window.CloudDataClient.createCloudDataClient;
+    context.window.CloudDataClient.createCloudDataClient = function(options) {
+      return Object.assign({ async rpc() { return true; } }, createClient(options));
+    };
+  }
   vm.createContext(context);
   vm.runInContext(script + `\n;globalThis.__authUiHooks = {
     setState: function(next) { Object.assign(state, next); },
@@ -78,6 +84,7 @@ function createScriptHarness(overrides = {}) {
       removeRecordMedia = next.remove || function() {};
     }
   };`, context);
+  context.__authUiHooks.setState({ privacyReady: true, isMember: true });
   return { context, hooks: context.__authUiHooks, body };
 }
 
@@ -140,7 +147,7 @@ test('认证状态控制只读模式并在退出或失效时关闭写面板', ()
   assert.match(script, /document\.body\.dataset\.authenticated\s*=\s*state\.authUser\s*\?\s*"true"\s*:\s*"false"/);
   assert.match(script, /function closeWritePanels\([\s\S]*?closePanel\(\)[\s\S]*?closePanelById\(recordPanel\)[\s\S]*?closePanelById\(capsulePanel\)/);
   assert.match(script, /if\s*\(!state\.authUser\)\s*\{[\s\S]*?closeWritePanels\(\)/);
-  assert.match(script, /becameAuthenticated\s*&&\s*event\s*!==\s*"TOKEN_REFRESHED"[\s\S]*?await loadRemoteData\(\);/);
+  assert.match(script, /becameAuthenticated \|\| identityChanged[\s\S]*?event\s*!==\s*"TOKEN_REFRESHED"[\s\S]*?await loadRemoteData\(\);/);
 });
 
 test('页头显示用户名和头像而不显示邮箱', () => {
@@ -584,7 +591,7 @@ test('匿名初始读取期间登录会排队认证刷新且 pending 只插入�
   });
 });
 
-test('旧代 pending 插入失败不能阻断认证替换后的排队刷新', async () => {
+test('旧代 pending 插入失败不能阻断刷新，切换账号不接管旧账号的私密草稿', async () => {
   let rejectOldInsert;
   let oldInsertStarted;
   const oldInsertGate = new Promise((_, reject) => { rejectOldInsert = reject; });
@@ -625,7 +632,7 @@ test('旧代 pending 插入失败不能阻断认证替换后的排队刷新', as
   ['love_plans', 'love_records', 'love_todos', 'love_photos', 'love_capsules'].forEach(table => {
     assert.ok(freshTables.includes(table), `认证替换后未重新读取 ${table}`);
   });
-  assert.equal(freshInserts, 1);
+  assert.equal(freshInserts, 0, '新账号不得同步旧账号的私密 pending 记录');
   assert.equal(harness.hooks.getState().backendReady, true);
 });
 

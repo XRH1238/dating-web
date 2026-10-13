@@ -69,17 +69,17 @@ test('图片渲染为高清查看按钮且实况照片带 LIVE 标记', () => {
   assert.match(script, /MediaViewer\.open/);
 });
 
-test('HEIC 实况照片使用无控制条的 MOV 帧作为相册预览', () => {
-  assert.match(script, /LivePhotoMedia\.previewMode\(media\)/);
-  assert.match(script, /class="live-photo-motion-preview"/);
-  assert.match(script, /muted playsinline preload="metadata"/);
+test('实况照片先尝试静态封面，失败才使用无控制条的 MOV 帧', () => {
+  assert.match(script, /media\.poster_url \|\| media\.cover_url/);
+  assert.match(script, /video\.className = 'live-photo-motion-preview'/);
+  assert.match(script, /video\.muted = true/);
   assert.match(script, /data-live-preview/);
   assert.doesNotMatch(script, /live-photo-motion-preview[^>]*controls/);
 });
 
 test('动态预览加载失败时显示明确占位而不是黑色卡片', () => {
   assert.match(script, /实况预览暂不可用/);
-  assert.match(script, /addEventListener\("error"/);
+  assert.match(script, /addEventListener\(['"]error['"]/);
   assert.match(styles, /\.live-photo-motion-preview[\s\S]*pointer-events:\s*none/);
   assert.match(styles, /\.live-photo-preview-error[\s\S]*background:\s*#2f2730/);
 });
@@ -141,7 +141,7 @@ test('查看器保持已验证版本且页面入口使用本次缓存版本', ()
   assert.match(html, /live-photo\.js\?v=20260922-1/);
   assert.match(html, /media-viewer\.js\?v=20260923-1/);
   ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260922-1'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261013-1'));
   });
 });
 

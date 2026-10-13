@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>我们的出游小站</title>
     <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20260922-1" />
+    <link rel="stylesheet" href="styles.css?v=20261013-1" />
   </head>
   <body data-authenticated="false">
     <header class="site-header">
@@ -30,6 +30,7 @@
       </div>
     </header>
     <div class="cloud-status" id="cloud-status" role="status">正在连接后端...</div>
+    <p class="privacy-notice" id="privacy-notice">这里只展示公开精选。登录后，我们可以重温完整的故事。</p>
 
     <main id="home">
       <section class="hero hero-stage">
@@ -80,6 +81,8 @@
         <span class="trip-strip-action">查看计划 <b aria-hidden="true">→</b></span>
         <span class="trip-strip-shine" aria-hidden="true"></span>
       </a>
+
+      <section class="section recent-memories" aria-label="最近一次回忆" id="recent-memory"></section>
 
       <section class="section intro-grid" aria-label="网站功能概览">
         <div>
@@ -133,7 +136,7 @@
             <div class="anniversary-copy">
               <h3>把普通日子也认真记住</h3>
               <p>
-                这里会自动提醒 300 天、365 天、520 天和更远的纪念日。你们可以提前安排一顿饭、一束花、一场短途旅行，或者只是认真说一句“今天也很喜欢你”。
+                这里会显示下一次纪念日的日期和倒计时。你们可以提前安排一顿饭、一束花、一场短途旅行，或者只是认真说一句“今天也很喜欢你”。
               </p>
             </div>
             <div class="milestone-list" id="milestone-list" aria-live="polite"></div>
@@ -156,7 +159,7 @@
             <p class="muted">以市为单位记录足迹。拖拽或缩放地图，路线会保留每一段的交通方式。</p>
           </div>
           <div class="map-shell">
-            <div id="footprint-map" class="china-map" role="img" aria-label="中国旅行足迹地图">
+            <div id="footprint-map" class="china-map" role="region" aria-label="中国旅行足迹地图">
               <div class="map-overlay" id="map-overlay" aria-hidden="true"></div>
             </div>
             <div class="map-legend" id="map-legend"></div>
@@ -220,9 +223,18 @@
           </div>
         </div>
         <div class="todo-board">
+          <div class="todo-search-bar">
+            <label for="todo-search">找一个愿望</label>
+            <input id="todo-search" type="search" placeholder="搜索旅行、美食或日常里的关键词" />
+            <label class="sr-only" for="todo-category">愿望主题</label>
+            <select id="todo-category" aria-label="愿望主题"><option value="all">所有主题</option><option>旅行</option><option>美食</option><option>日常</option><option>其他</option><option>未分类</option></select>
+            <span id="todo-search-count" role="status"></span>
+          </div>
+          <button class="ghost-button todo-login" type="button" id="todo-login">登录后添加愿望</button>
           <form class="inline-form" id="todo-form" data-auth-write>
             <label class="sr-only" for="todo-input">写下一件想一起做的事</label>
             <input id="todo-input" name="todo" type="text" placeholder="写下一件想一起做的事" required />
+            <select id="todo-add-category" aria-label="新愿望的主题"><option>未分类</option><option>旅行</option><option>美食</option><option>日常</option><option>其他</option></select>
             <button class="button primary" type="submit">添加</button>
           </form>
           <p class="todo-note"><span>一起把日常，过成回忆。</span><img class="todo-note-heart" src="assets/icons/heart-outline.svg" alt="" aria-hidden="true" /></p>
@@ -326,6 +338,7 @@
         <button class="panel-close" type="button" aria-label="关闭记录表单" data-close-panel="record-panel">×</button>
         <span class="section-label">New Memory</span><h2 id="record-panel-title">写一条出游记录</h2>
         <form id="record-form">
+          <label>署名（选填）<input name="author_name" type="text" maxlength="60" placeholder="这篇是谁写的？可以填昵称" /></label>
           <div class="record-date-picker" id="record-date-picker">
             <div class="record-date-summary" role="group" aria-label="行程日期范围">
               <button class="record-date-summary-button is-active" type="button" data-record-date-target="start" aria-pressed="true"><span>开始日期</span><strong>选择开始日期</strong></button>
@@ -467,7 +480,7 @@
     </footer>
 
     <script src="auth-client.js?v=20260905-1"></script>
-    <script src="cloud-data-client.js?v=20260915-1"></script>
+    <script src="cloud-data-client.js?v=20261013-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
     <script src="live-photo.js?v=20260922-1"></script>
     <script src="image-compression.js?v=20260830-6"></script>
@@ -483,6 +496,32 @@
     <script src="trip-planning.js?v=20260830-1"></script>
     <script src="avatar-cropper.js?v=20260905-1"></script>
     <script src="storage-object-ref.js?v=20260915-1"></script>
-    <script src="script.js?v=20260922-1"></script>
+    <dialog class="trip-story-dialog" id="trip-story-dialog" aria-labelledby="trip-story-title">
+      <div class="trip-story-heading"><h2 id="trip-story-title">旅行故事</h2><button class="ghost-button" type="button" id="trip-story-close" aria-label="关闭旅行故事">关闭</button></div>
+      <div id="trip-story-content"></div>
+    </dialog>
+    <dialog class="map-dialog" id="map-dialog" aria-label="全屏旅行地图">
+      <div class="map-dialog-heading"><strong>我们的旅行路线</strong><button class="ghost-button" type="button" id="map-dialog-close">关闭地图</button></div>
+      <div id="map-dialog-content"></div>
+    </dialog>
+    <dialog class="trip-story-dialog" id="wish-memory-dialog" aria-labelledby="wish-memory-title">
+      <div class="trip-story-heading"><h2 id="wish-memory-title">收好这个愿望</h2><button class="ghost-button" type="button" id="wish-memory-close">关闭</button></div>
+      <form id="wish-memory-form">
+        <label>主题<select name="category"><option>未分类</option><option>旅行</option><option>美食</option><option>日常</option><option>其他</option></select></label>
+        <label>完成日期（选填）<input name="completed_on" type="date" /></label>
+        <label>一句感想（选填）<textarea name="completion_note" rows="3" maxlength="2000"></textarea></label>
+        <label>关联一次旅行（选填）<select name="trip_key" id="wish-memory-trip"><option value="">暂不关联</option></select></label>
+        <label>添加照片（选填，最多 6 张）<input name="photos" type="file" accept="image/*" multiple /></label>
+        <p id="wish-memory-photo-count" class="muted"></p>
+        <p id="wish-memory-status" role="status"></p>
+        <button class="button primary" type="submit">保存回忆</button>
+      </form>
+    </dialog>
+    <dialog class="trip-story-dialog" id="gallery-trip-dialog" aria-labelledby="gallery-trip-title">
+      <div class="trip-story-heading"><h2 id="gallery-trip-title">照片属于哪次旅行</h2><button class="ghost-button" type="button" id="gallery-trip-close">关闭</button></div>
+      <form id="gallery-trip-form"><label for="gallery-trip-select">选择旅行</label><select id="gallery-trip-select" name="trip_key"><option value="">暂不关联</option></select><p id="gallery-trip-status" role="status"></p><button class="button primary" type="submit">保存关联</button></form>
+    </dialog>
+    <script src="travel-experience.js?v=20261013-1"></script>
+    <script src="script.js?v=20261013-1"></script>
   </body>
 </html>

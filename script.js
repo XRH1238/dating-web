@@ -54,9 +54,11 @@ const provinceNames = {
 // State
 const state = {
   client: null, backendReady: false, authClient: null, authUser: null,
-  plans: [], records: [], todos: [], photos: [], capsules: [], todoPage: 1, todoFilter: "all",
+  plans: [], records: [], todos: [], photos: [], capsules: [], todoPage: 1, todoFilter: "all", todoSearch: "",
   snapshotStore: null, recordDraftStore: null,
+  privacyReady: false, isMember: false, todoCategory: 'all',
 };
+const privateMediaLinks = new Map();
 
 // DOM refs
 const countdownEl = document.querySelector("[data-trip-date]");
@@ -125,6 +127,8 @@ const deletingGalleryPhotos = new Set();
 // Local SVG map state
 let chinaMap = null;
 let mapView = { scale: 1, x: 0, y: 0 };
+let mapRouteView = { scale: 1, x: 0, y: 0 };
+let mapDataSignature = '';
 let mapDrag = null;
 let mapGeometry = null;
 let mapFrame = 0;
@@ -177,16 +181,19 @@ document.addEventListener("DOMContentLoaded", init);
 window.addEventListener("resize", scheduleMapView);
 
 async function init() {
+  initNavigationOffsets();
   initHeroMotion();
   bindEvents();
   connectSnapshotStore();
   connectRecordDraftStore();
-  loadCachedData();
-  restoreRecordDraft();
   connectAuth();
   await restoreAuth();
-  renderAll();
   connectSupabase();
+  await preparePrivateSpace();
+  connectPrivateStores();
+  loadCachedData();
+  if (state.isMember) restoreRecordDraft();
+  renderAll();
   await loadRemoteData();
 }
 
@@ -236,8 +243,20 @@ async function restoreAuth() {
 
 async function handleAuthStateChange(event, session) {
   var hadUser = !!state.authUser;
+  var previousId = state.authUser && state.authUser.id;
+  var nextId = session && session.user && session.user.id;
+  var identityChanged = previousId !== nextId;
+  if (identityChanged && hadUser) saveCachedData();
   authMutationGeneration += 1;
   state.authUser = session && session.user ? session.user : null;
+  if (identityChanged) privateMediaLinks.clear();
+  if (identityChanged && hadUser) {
+    state.isMember = false;
+    state.plans = []; state.records = []; state.todos = []; state.photos = []; state.capsules = [];
+    var story = document.querySelector('#trip-story-dialog');
+    if (story && story.open) story.close();
+    if (window.MediaViewer && window.MediaViewer.close) window.MediaViewer.close();
+  }
   var becameAuthenticated = !hadUser && !!state.authUser;
   updateAuthUi();
   renderAll();
@@ -248,16 +267,23 @@ async function handleAuthStateChange(event, session) {
   if (!state.authUser) {
     closeWritePanels();
     if (hadUser && event !== "SIGNED_OUT") showCloudNotice("登录已失效，请重新登录后继续编辑。", true);
+    connectPrivateStores();
+    connectSupabase();
+    loadRemoteData().catch(function() { setCloudStatus('offline'); });
     return;
   }
-  if (becameAuthenticated && event !== "TOKEN_REFRESHED") {
+  if ((becameAuthenticated || identityChanged) && event !== "TOKEN_REFRESHED") {
     connectSupabase();
+    await preparePrivateSpace();
+    connectPrivateStores();
+    if (state.isMember) { loadCachedData(); restoreRecordDraft(); }
     await loadRemoteData();
   }
 }
 
 function updateAuthUi() {
   document.body.dataset.authenticated = state.authUser ? "true" : "false";
+  document.body.dataset.member = state.isMember ? 'true' : 'false';
   var loginButton = document.querySelector("#auth-login-button");
   var account = document.querySelector("#auth-account");
   var avatar = document.querySelector("#auth-avatar");
@@ -273,11 +299,14 @@ function updateAuthUi() {
     if (state.authUser) profileButton.setAttribute("aria-label", "个人资料：" + (profile.displayName || "已登录"));
   }
   if (avatar) {
-    avatar.style.backgroundImage = profile.avatarUrl ? "url(" + JSON.stringify(profile.avatarUrl) + ")" : "";
-    avatar.textContent = profile.avatarUrl ? "" : "♥";
-    avatar.classList.toggle("auth-avatar-placeholder", !profile.avatarUrl);
+    var avatarUrl = privateMediaUrl(profile.avatarUrl);
+    avatar.style.backgroundImage = avatarUrl ? "url(" + JSON.stringify(avatarUrl) + ")" : "";
+    avatar.textContent = avatarUrl ? "" : "♥";
+    avatar.classList.toggle("auth-avatar-placeholder", !avatarUrl);
   }
   if (logoutButton) logoutButton.hidden = !state.authUser;
+  var todoLogin = document.querySelector("#todo-login");
+  if (todoLogin) todoLogin.hidden = !!(state.authUser && state.isMember);
 }
 
 function authProfile(user) {
@@ -390,6 +419,10 @@ function closeProfileDialog() {
 }
 
 function requireAuthenticated(message, silent) {
+  if (state.privacyReady && state.authUser && !state.isMember) {
+    if (!silent) showCloudNotice('这个账号可以浏览公开精选，私密空间仅供我们两人使用。', true);
+    return false;
+  }
   if (state.authUser) return true;
   if (!silent) showAuthDialog(message || "请先登录后再继续");
   return false;
@@ -469,6 +502,7 @@ function bindMediaDropzone(name, input, receiveFiles) {
 }
 
 function bindEvents() {
+  bindTravelExperience();
   [form, todoForm, recordForm, capsuleForm, authLoginForm, passwordRecoveryForm, profileForm].forEach(trackFormEdits);
   bindMediaViewerTriggers();
   var authLoginButton = document.querySelector("#auth-login-button");
@@ -1169,7 +1203,8 @@ function connectRecordDraftStore() {
 }
 
 function loadCachedData() {
-  if (!state.snapshotStore) return;
+  if (!state.snapshotStore || typeof state.snapshotStore.load !== 'function') return;
+  if (!state.isMember) return;
   var snapshot = state.snapshotStore.load();
   state.plans = snapshot.plans;
   state.records = snapshot.records;
@@ -1256,6 +1291,7 @@ async function afterSuccessfulSave(saveOperation, onSuccess, target) {
 }
 
 async function loadRemoteData() {
+  if (!state.privacyReady) return;
   if (!state.backendReady) return;
   if (remoteLoadPromise) {
     if (remoteLoadGeneration !== authMutationGeneration) remoteLoadQueued = true;
@@ -1279,6 +1315,8 @@ async function loadRemoteDataOnce(loadGeneration) {
   var capsuleResult = await Promise.allSettled([fetchCapsules()]);
   if (loadGeneration !== authMutationGeneration) return;
   if (capsuleResult[0].status === "rejected") state.capsules = [];
+  await preparePrivateMedia();
+  if (loadGeneration !== authMutationGeneration) return;
   renderAll();
   var failed = coreResults.some(function(result) { return result.status === "rejected"; });
   if (!failed) {
@@ -1296,7 +1334,10 @@ async function loadRemoteDataOnce(loadGeneration) {
 
 // ========== Plans ==========
 async function fetchPlans() {
-  state.plans = await state.client.select(tables.plans);
+  var generation = authMutationGeneration;
+  var plans = await state.client.select(tables.plans);
+  if (generation !== authMutationGeneration) return;
+  state.plans = visibleRows(plans);
 }
 async function savePlan(entry) {
   if (!requireAuthenticated()) return false;
@@ -1361,8 +1402,11 @@ async function deletePlan(index) {
 
 // ========== Records ==========
 async function fetchRecords() {
+  var generation = authMutationGeneration;
   var cachedRecords = state.records.slice();
   var remoteRecords = await state.client.select(tables.records);
+  if (generation !== authMutationGeneration) return;
+  remoteRecords = visibleRows(remoteRecords);
   state.records = window.RecordRecovery
     ? window.RecordRecovery.mergeRemoteRecords(remoteRecords, cachedRecords)
     : remoteRecords;
@@ -1373,6 +1417,7 @@ function collectRecordDraft() {
   var fd = new FormData(recordForm);
   return {
     city: String(fd.get("city") || ""),
+    author_name: String(fd.get('author_name') || ''),
     title: String(fd.get("title") || ""),
     description: String(fd.get("description") || ""),
     moods: fd.getAll("moods"),
@@ -1460,6 +1505,7 @@ function restoreRecordDraft() {
   var draft = state.recordDraftStore.load();
   if (!hasRecordDraftContent(draft)) return;
   recordForm.elements.city.value = draft.city || "";
+  if (recordForm.elements.author_name) recordForm.elements.author_name.value = draft.author_name || '';
   recordForm.elements.title.value = draft.title || "";
   recordForm.elements.description.value = draft.description || "";
   restoreMoodOptions(draft.moods || []);
@@ -1564,6 +1610,7 @@ function openRecordEditor(recordId) {
   recordDraftFiles = [];
   recordForm.reset();
   recordForm.elements.city.value = record.city || "";
+  if (recordForm.elements.author_name) recordForm.elements.author_name.value = record.author_name || '';
   recordForm.elements.title.value = record.title || "";
   recordForm.elements.description.value = record.description || "";
   restoreMoodOptions(record.moods || []);
@@ -1852,23 +1899,23 @@ function registerMediaViewerGroup(container, items) {
 
 function bindMediaViewerTriggers() {
   document.addEventListener("click", function(event) {
+    if (event.target.closest && event.target.closest('[data-media-retry]')) return;
     var trigger = event.target.closest && event.target.closest(".media-viewer-trigger");
     if (!trigger) return;
     var group = trigger.closest("[data-media-viewer-group]");
     var items = group && mediaViewerCollections.get(group);
     if (!items || !items.length) return;
-    window.MediaViewer.open(items, Number(trigger.dataset.mediaViewerIndex) || 0, trigger);
+    awaitMediaThenOpen(items, Number(trigger.dataset.mediaViewerIndex) || 0, trigger);
   });
 }
 
 function mediaElementMarkup(media, alt, preview, index) {
-  var url = escapeHtml((media && media.url) || "");
+  var url = escapeHtml(privateMediaUrl((media && media.url) || ""));
   var label = escapeHtml(alt || "媒体文件");
   var isLive = window.MediaViewer.canPlayLive(media);
-  var previewMedia = isLive && window.LivePhotoMedia.previewMode(media) === "motion"
-    ? '<video class="live-photo-motion-preview" src="' + escapeHtml(media.motion_url) +
-      '" muted playsinline preload="metadata" data-live-preview aria-label="' + label + '"></video>'
-    : '<img src="' + url + '" alt="' + label + '" loading="lazy" decoding="async" />';
+  var poster = escapeHtml(privateMediaUrl((media && (media.poster_url || media.cover_url)) || (media && media.url) || ""));
+  var previewMedia = '<img src="' + poster + '" alt="' + label + '" loading="lazy" decoding="async" data-photo-preview data-original-media-url="' + escapeHtml((media && (media.poster_url || media.cover_url || media.url)) || '') + '"' +
+    (isLive ? ' data-motion-preview-url="' + escapeHtml(privateMediaUrl(media.motion_url)) + '" data-original-motion-url="' + escapeHtml(media.motion_url) + '"' : '') + ' />';
   if (window.MediaUpload.isVideo(media) && !isLive) {
     return '<video src="' + url + '" controls preload="metadata" aria-label="' + label + '"></video>';
   }
@@ -1884,19 +1931,69 @@ function mediaElementMarkup(media, alt, preview, index) {
 
 function prepareLivePhotoPreviews(container) {
   if (!container) return;
-  container.querySelectorAll('[data-live-preview]').forEach(function(video) {
-    video.addEventListener("loadeddata", function() {
-      try {
-        var duration = Number.isFinite(video.duration) ? video.duration : 0;
-        video.currentTime = Math.min(0.05, Math.max(0, duration));
-      } catch (_) {}
-    }, { once: true });
-    video.addEventListener("error", function() {
-      var placeholder = document.createElement("span");
-      placeholder.className = "live-photo-preview-error";
-      placeholder.textContent = "实况预览暂不可用";
-      video.replaceWith(placeholder);
-    }, { once: true });
+  container.querySelectorAll('[data-photo-preview]').forEach(function(image) {
+    var host = image.parentElement;
+    var original = image.getAttribute('src');
+    var motionUrl = image.dataset.motionPreviewUrl;
+    var video = null;
+    var feedback = null;
+    // Retry is a sibling of the viewer button, never a nested button.
+    var wrapper = document.createElement('span');
+    wrapper.className = 'media-preview-shell';
+    host.before(wrapper);
+    wrapper.appendChild(host);
+    function clearFeedback() {
+      if (feedback) feedback.remove();
+      feedback = null;
+      wrapper.classList.remove('has-media-error');
+    }
+    function failed() {
+      clearFeedback();
+      wrapper.classList.add('has-media-error');
+      feedback = document.createElement('span');
+      feedback.className = 'media-load-feedback';
+      var message = document.createElement('span');
+      message.textContent = motionUrl ? '实况预览暂不可用，可重试或打开原图' : '照片暂时没有加载出来';
+      var retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = '重新加载';
+      retry.setAttribute('data-media-retry', '');
+      retry.setAttribute('aria-label', '重新加载：' + image.alt);
+      retry.addEventListener('click', async function(event) {
+        event.stopPropagation();
+        await preparePrivateMedia(true);
+        var renewed = privateMediaUrl(image.dataset.originalMediaUrl || original);
+        if (renewed) original = renewed;
+        if (image.dataset.originalMotionUrl) motionUrl = privateMediaUrl(image.dataset.originalMotionUrl);
+        clearFeedback();
+        if (video) { video.removeAttribute('src'); video.load(); video.remove(); video = null; }
+        image.hidden = false;
+        image.removeAttribute('src');
+        image.setAttribute('src', original);
+      });
+      feedback.append(message, retry);
+      wrapper.appendChild(feedback);
+    }
+    function imageFailed() {
+      if (!motionUrl) { failed(); return; }
+      image.hidden = true;
+      if (video) { failed(); return; }
+      video = document.createElement('video');
+      video.className = 'live-photo-motion-preview';
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.preload = 'metadata';
+      video.setAttribute('data-live-preview', '');
+      video.setAttribute('aria-label', image.alt);
+      video.addEventListener('loadeddata', clearFeedback);
+      video.addEventListener('error', failed);
+      host.prepend(video);
+      video.src = motionUrl;
+    }
+    image.addEventListener('load', clearFeedback);
+    image.addEventListener('error', imageFailed);
+    if (image.complete && !image.naturalWidth) imageFailed();
   });
 }
 
@@ -1924,6 +2021,7 @@ async function submitRecordForm(event) {
   var fd = new FormData(recordForm);
   var entry = { title: fd.get("title").trim(), city: fd.get("city").trim(), date: date,
     description: fd.get("description").trim(), moods: fd.getAll("moods"), photos: [] };
+  if (state.privacyReady) entry.author_name = String(fd.get('author_name') || '').trim();
   if (submittedExistingPhotos.length + submittedDraftFiles.length > 20) {
     status.textContent = "每条记录最多保留 20 个媒体项目，请先移除一些照片或视频。";
     return;
@@ -2029,7 +2127,12 @@ async function deleteRecord(index) {
 }
 
 // ========== Time capsules ==========
-async function fetchCapsules() { state.capsules = await state.client.select(tables.capsules); }
+async function fetchCapsules() {
+  var generation = authMutationGeneration;
+  var capsules = await state.client.select(tables.capsules);
+  if (generation !== authMutationGeneration) return;
+  state.capsules = state.privacyReady && !state.isMember ? [] : capsules;
+}
 
 async function saveCapsule(entry, index, submittedId) {
   if (!requireAuthenticated()) return false;
@@ -2096,21 +2199,27 @@ async function deleteCapsule(index) {
   state.capsules.splice(index, 1); renderAll();
 }
 
-function confirmAction(message) {
+function confirmAction(message, label) {
   var dialog = document.querySelector("#confirm-dialog");
   if (!dialog || typeof dialog.showModal !== "function") return Promise.resolve(window.confirm(message));
   document.querySelector("#confirm-message").textContent = message;
+  dialog.querySelector('[value="confirm"]').textContent = label || '确定删除';
   dialog.showModal();
   return new Promise(function(resolve) { dialog.addEventListener("close", function done() { dialog.removeEventListener("close", done); resolve(dialog.returnValue === "confirm"); }); });
 }
 
 // ========== Todos ==========
 async function fetchTodos() {
-  state.todos = await state.client.select(tables.todos);
+  var generation = authMutationGeneration;
+  var todos = await state.client.select(tables.todos);
+  if (generation !== authMutationGeneration) return;
+  state.todos = visibleRows(todos);
 }
 async function saveTodo(text) {
   if (!requireAuthenticated()) return false;
   var entry = { text: text, done: false, created_at: new Date().toISOString() };
+  var category = document.querySelector('#todo-add-category');
+  if (state.privacyReady) entry.category = category ? category.value : '未分类';
   if (state.backendReady) {
     try {
       await state.client.insert(tables.todos, [entry]);
@@ -2132,12 +2241,15 @@ async function toggleTodo(index) {
   var todo = state.todos[index];
   if (!todo) return;
   todo.done = !todo.done;
+  var completedOn = todo.completed_on;
+  if (state.privacyReady) todo.completed_on = todo.done ? (todo.completed_on || localTodayIso()) : null;
   if (state.backendReady && todo.id) {
     try {
-      await state.client.update(tables.todos, todo.id, { done: todo.done });
+      await state.client.update(tables.todos, todo.id, Object.assign({ done: todo.done }, state.privacyReady ? { completed_on: todo.done ? todo.completed_on : null } : {}));
     } catch (_) {
       if (!state.authUser) {
         todo.done = !todo.done;
+        todo.completed_on = completedOn;
         requireAuthenticated();
         renderAll();
         return false;
@@ -2167,8 +2279,10 @@ async function deleteTodo(index) {
 
 // ========== Photos ==========
 async function fetchPhotos() {
+  var generation = authMutationGeneration;
   var photos = await state.client.select(tables.photos);
-  state.photos = photos.map(function(photo) {
+  if (generation !== authMutationGeneration) return;
+  state.photos = visibleRows(photos).map(function(photo) {
     return Object.assign({}, photo, {
       kind: photo.media_kind || (photo.motion_url ? "live-photo" : (window.MediaUpload.isVideo(photo) ? "video" : "image")),
     });
@@ -2187,6 +2301,7 @@ function galleryMediaFolder(photo) {
 }
 
 async function attachMotionToGalleryPhoto(photo, file) {
+  photo = state.photos.find(function(item) { return String(item.id) === String(photo.id); }) || photo;
   if (!requireAuthenticated()) throw new Error("请先登录后再保存");
   if (!canAttachGalleryMotion(photo)) throw new Error("当前照片暂时无法补充动态");
   if (!window.LivePhotoMedia.isMotionFile(file)) throw new Error("请选择从实况照片存储的视频");
@@ -2333,11 +2448,15 @@ function renderAll() {
   renderPlans();
   renderNextTripSummary();
   renderRecords();
+  renderRecentMemory();
   renderCapsules();
   renderTodos();
   renderPhotos();
   renderAnniversary();
   renderFootprintMap();
+  if (state.privacyReady) preparePrivateMedia().then(function(changed) {
+    if (changed) { updateAuthUi(); renderRecords(); renderPhotos(); renderRecentMemory(); renderFootprintMap(); }
+  });
   return saveCachedData();
 }
 
@@ -2347,17 +2466,18 @@ function renderAnniversary() {
   var milestoneList = document.querySelector("#milestone-list");
   var startLabel = document.querySelector("#love-start-date");
   if (!daysEl || !milestoneList) return;
-  var start = new Date(loveStartDate).getTime();
-  var now = Date.now();
-  var days = Math.max(0, Math.floor((now - start) / (1000 * 60 * 60 * 24)));
+  var today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  var milestones = window.TravelExperience.anniversaryMilestones(loveStartDate, today, milestoneDays);
+  var days = milestones.days;
   daysEl.textContent = String(days);
   if (startLabel) startLabel.textContent = "从 " + loveStartDate + " 开始";
 
-  var html = "";
-  milestoneDays.forEach(function(target) {
-    var diff = target - days;
-    html += '<article class="milestone-item' + (diff <= 0 ? ' is-done' : '') + '"><div><h3>' + target + ' 天</h3><p>' + (diff > 0 ? '还有 ' + diff + ' 天' : '已经一起走过') + '</p></div><span>' + (diff > 0 ? '倒计时' : '已达成') + '</span></article>';
-  });
+  function markup(item, next) {
+    return '<article class="milestone-item' + (item.remaining < 0 ? ' is-done' : '') + (next ? ' is-next' : '') + '"><div><h3>' + item.target + ' 天</h3><time datetime="' + item.date + '">' + item.date + '</time><p>' + (item.remaining > 0 ? '还有 ' + item.remaining + ' 天' : item.remaining === 0 ? '今天就是纪念日' : '已经一起走过') + '</p></div><span>' + (next ? '下一次期待' : item.remaining < 0 ? '已达成' : '倒计时') + '</span></article>';
+  }
+  var html = milestones.upcoming.map(function(item, index) { return markup(item, index === 0); }).join('');
+  if (!milestones.upcoming.length) html = '<p>这些纪念日都已一起走过，期待更多新的日子。</p>';
+  if (milestones.past.length) html += '<details class="milestone-history"><summary>已一起走过的纪念日 · ' + milestones.past.length + ' 个</summary><div>' + milestones.past.map(function(item) { return markup(item, false); }).join('') + '</div></details>';
   milestoneList.innerHTML = html;
 }
 
@@ -2373,7 +2493,7 @@ function renderPlans() {
     var description = String(p.description || "").trim();
     var deleteButton = state.authUser ? '<button class="plan-delete" type="button" data-delete-plan="' + i + '" aria-label="删除出游计划：' + escapeHtml(p.title || "未命名计划") + '"><img src="assets/icons/trash.svg" alt="" /></button>' : '';
     var editButton = state.authUser ? '<button class="plan-edit" type="button" data-edit-plan="' + i + '" aria-label="编辑出游计划：' + escapeHtml(p.title || "未命名计划") + '">编辑</button>' : '';
-    var actions = state.authUser ? '<div class="plan-actions">' + editButton + deleteButton + '</div>' : '';
+    var actions = state.authUser ? '<div class="plan-actions">' + editButton + deleteButton + visibilityButton('plans', p) + '</div>' : '';
     return '<article class="mini-plan"><span class="date-pill">' + escapeHtml(window.MapLabelLayout.formatDateRange(p.date)) +
       '</span><div><h3>' + escapeHtml(p.title || "") + '</h3>' + (description ? '<p>' + escapeHtml(description) + '</p>' : '') +
       '</div>' + actions + '</article>';
@@ -2500,21 +2620,25 @@ function renderRecords() {
     return;
   }
   list.classList.remove("empty-state");
-  list.innerHTML = records.map(function(r) {
+  var travelGroups = window.TravelExperience.groupTrips(records, state.plans);
+  list.innerHTML = travelGroups.map(function(group) {
+    return '<section class="journey-group"><div class="journey-group-heading"><h3>' + escapeHtml(group.city || group.records[0].title) + '</h3><span>' + escapeHtml(window.MapLabelLayout.formatDateRange(group.date)) + ' · ' + group.records.length + ' 份记录</span></div>' + group.records.map(function(r) {
     var originalIndex = r._sourceIndex;
     var viewerItems = viewerMediaItems(r.photos);
     var recordActions = state.authUser ? ((r.id ? '<button class="story-edit" type="button" data-edit-record-id="' + escapeHtml(String(r.id)) + '" aria-label="编辑记录">编辑</button>' : '') +
-      '<button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button>') : '';
-    return '<article class="story-card"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
+      '<button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button>' + visibilityButton('records', r)) : '';
+    return '<article class="story-card" data-record-city="' + escapeHtml(window.MapLabelLayout.canonicalCityName(r.city)) + '"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
       escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><div class="story-card-actions">' +
-      recordActions + '</div></div><p class="story-card-description">' +
+      recordActions + '</div></div>' + (r.author_name ? '<span class="story-author">' + escapeHtml(r.author_name) + '</span>' : '') + '<p class="story-card-description">' +
       escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
+      '<button class="ghost-button story-trip-link" type="button" data-trip-key="' + escapeHtml(window.TravelExperience.tripKey(r.city, r.date) || 'record:' + (r.id || originalIndex)) + '">查看这次旅行的故事 →</button>' +
       (r.photos.length ? '<div class="story-photos">' + r.photos.map(function(photo) {
         return mediaElementMarkup(photo, photo.name || r.title || "旅行媒体", false, viewerItems.indexOf(photo));
       }).join("") + '</div>' : '') + '</article>';
+    }).join('') + '</section>';
   }).join("");
   prepareLivePhotoPreviews(list);
-  var recordMediaGroups = records.filter(function(record) { return record.photos.length; });
+  var recordMediaGroups = travelGroups.flatMap(function(group) { return group.records; }).filter(function(record) { return record.photos.length; });
   list.querySelectorAll(".story-photos").forEach(function(group, index) {
     registerMediaViewerGroup(group, recordMediaGroups[index].photos);
   });
@@ -2569,17 +2693,21 @@ function renderTodos() {
   var filteredTodos = state.todos.map(function(todo, index) {
     return { todo: todo, index: index };
   }).filter(function(entry) {
+    if (state.todoCategory !== 'all' && (entry.todo.category || '未分类') !== state.todoCategory) return false;
+    if (state.todoSearch && !String(entry.todo.text || '').toLocaleLowerCase().includes(state.todoSearch.toLocaleLowerCase())) return false;
     if (state.todoFilter === "pending") return !entry.todo.done;
     if (state.todoFilter === "done") return entry.todo.done;
     return true;
   });
+  var searchCount = document.querySelector('#todo-search-count');
+  if (searchCount) searchCount.textContent = state.todoSearch || state.todoCategory !== 'all' ? '找到 ' + filteredTodos.length + ' 个愿望' : '';
   var max = todoPageSize;
   var pageCount = Math.max(1, Math.ceil(filteredTodos.length / max));
   state.todoPage = Math.min(Math.max(1, state.todoPage), pageCount);
   var start = (state.todoPage - 1) * max;
   var todos = filteredTodos.slice(start, start + max);
   if (!todos.length) {
-    var emptyTitle = state.todoFilter === "done" ? "还没有已完成的愿望。" : state.todoFilter === "pending" ? "所有愿望都完成啦。" : "还没有想做的事。";
+    var emptyTitle = state.todoSearch || state.todoCategory !== 'all' ? "没有找到匹配的愿望。" : state.todoFilter === "done" ? "还没有已完成的愿望。" : state.todoFilter === "pending" ? "所有愿望都完成啦。" : "还没有想做的事。";
     var emptyHint = state.todoFilter === "all" ? "从上面的输入框开始添加。" : "切换筛选条件查看其他愿望。";
     list.innerHTML = '<div class="todo-empty"><p>' + emptyTitle + '</p><span>' + emptyHint + '</span></div>';
     return;
@@ -2595,7 +2723,10 @@ function renderTodos() {
         '</button><button class="todo-delete" type="button" aria-label="删除想做的事：' + escapeHtml(t.text) +
         '" data-delete-todo="' + entry.index + '"><img src="assets/icons/trash.svg" alt="" /></button></span>' : '';
       return '<div class="todo-row' + (t.done ? ' done' : '') + '"><span class="todo-text">' + escapeHtml(t.text) +
-        '</span>' + todoActions + '</div>';
+        '</span><span class="todo-completion">' + (t.done ? '✓ 已完成' : '待完成') + (t.category ? ' · ' + escapeHtml(t.category) : '') +
+        (t.done && t.completed_on ? ' · ' + escapeHtml(t.completed_on) : '') + '</span>' + todoActions +
+        (state.isMember ? '<button class="wish-memory-link" type="button" data-wish-memory="' + entry.index + '">' + (t.done ? '留一句回忆' : '整理愿望') + '</button>' : '') +
+        (t.done && t.completion_note ? '<p class="wish-memory-note">' + escapeHtml(t.completion_note) + '</p>' : '') + visibilityButton('todos', t) + '</div>';
     }).join("") + '</div>';
   }).join("") + '</div>';
   if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';
@@ -2623,7 +2754,10 @@ function renderPhotos() {
     var deleteDisabled = deletingGalleryPhotos.has(deleteKey) ? " disabled aria-busy=\"true\"" : "";
     var deleteButton = state.authUser ? '<button class="gallery-delete" type="button" data-delete-gallery-photo="' + index +
       '" aria-label="删除相册媒体：' + escapeHtml(label) + '"' + deleteDisabled + '><img src="assets/icons/trash.svg" alt="" /></button>' : '';
-    return '<figure>' + mediaElementMarkup(p, label, false, viewerItems.indexOf(p)) + deleteButton + '</figure>';
+    var group = getTravelGroups().find(function(item) { return item.key === p.trip_key; });
+    return '<figure>' + mediaElementMarkup(p, label, false, viewerItems.indexOf(p)) + deleteButton +
+      '<figcaption>' + (group ? '<button type="button" class="gallery-trip-link" data-trip-key="' + escapeHtml(group.key) + '">' + escapeHtml(group.city + ' · ' + window.MapLabelLayout.formatDateRange(group.date)) + '</button>' : '') +
+      (state.isMember && p.id ? '<button type="button" class="gallery-trip-link" data-gallery-trip="' + escapeHtml(p.id) + '">' + (group ? '更改旅行' : '关联旅行') + '</button>' : '') + visibilityButton('photos', p) + '</figcaption></figure>';
   }).join("");
   prepareLivePhotoPreviews(grid);
   registerMediaViewerGroup(grid, state.photos);
@@ -2669,7 +2803,7 @@ function renderFootprintMap() {
 
   var mapPhotos = state.photos.map(function(photo) {
     var city = resolveCity(getPhotoCity(photo));
-    return city ? { city: city.name, coordinates: city.coordinates, url: photo.url, date: photo.created_at } : null;
+    return city ? { city: city.name, coordinates: city.coordinates, url: privateMediaUrl(photo.url), date: photo.created_at } : null;
   }).filter(Boolean);
   renderChinaMap(mapEl, overlay, mappedPlans, Array.from(destinationCities.values()), mapPhotos);
 
@@ -2718,7 +2852,14 @@ function renderChinaMap(container, overlay, plans, visitedCities, mapPhotos) {
   (mapPhotos || []).forEach(function(photo) {
     if (photo.city) mapPriorityCities.add(window.MapLabelLayout.canonicalCityName(photo.city));
   });
-  container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + mapGeometry.provinceLabels + mapGeometry.cityLabels + routeSvg(plans, visitedCities, mapPhotos || []) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="reset" aria-label="复位地图">↺</button></div>';
+  var points = [];
+  plans.forEach(function(plan) { plan.segments.forEach(function(segment) { points.push(mapGeometry.project(segment.start), mapGeometry.project(segment.end)); }); });
+  visitedCities.forEach(function(city) { points.push(mapGeometry.project(city.coordinates)); });
+  (mapPhotos || []).forEach(function(photo) { points.push(mapGeometry.project(photo.coordinates)); });
+  mapRouteView = window.TravelExperience.fitMapPoints(points);
+  var signature = JSON.stringify(points);
+  if (signature !== mapDataSignature) { mapView = Object.assign({}, mapRouteView); mapDataSignature = signature; }
+  container.innerHTML = '<svg class="china-svg" viewBox="0 0 1000 720" aria-label="可缩放中国地图"><defs><filter id="route-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".2"/></filter></defs><rect class="map-water" width="1000" height="720"/><g class="map-content">' + mapGeometry.cities + mapGeometry.provinces + mapGeometry.provinceLabels + mapGeometry.cityLabels + routeSvg(plans, visitedCities, mapPhotos || []) + '</g></svg><div class="map-controls" aria-label="地图缩放控件"><button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button><button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button><button type="button" data-map-action="routes">我们的路线</button><button type="button" data-map-action="reset">全国足迹</button><button type="button" data-map-action="fullscreen">全屏查看</button></div>';
   chinaMap = container.querySelector(".china-svg");
   mapCityLabels = Array.from(chinaMap.querySelectorAll('.city-labels text'));
   bindMapInteractions(container);
@@ -2790,7 +2931,7 @@ function routeSvg(plans, visitedCities, mapPhotos) {
     var path = 'M' + a[0].toFixed(1) + ',' + a[1].toFixed(1) + ' Q' + mx.toFixed(1) + ',' + my.toFixed(1) + ' ' + b[0].toFixed(1) + ',' + b[1].toFixed(1);
     return '<g class="route-group" style="--route-color:' + color + ';--transport-color:' + visual.color + ';--route-delay:' + ((planIndex + segmentIndex) * 120) + 'ms"><path class="route-line" d="' + path + '"/><g class="route-badge" transform="translate(' + mx.toFixed(1) + ' ' + my.toFixed(1) + ')" filter="url(#route-shadow)"><circle r="15"/>' + routeTransportGlyph(seg.transport) + '</g></g>';
   }).join(''); }).join('');
-  var cities = visitedCities.map(function(city) { var p = mapGeometry.project(city.coordinates); return '<g class="city-marker" transform="translate(' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')"><circle r="7"/><circle class="city-core" r="2.6"/><text x="11" y="-10">' + escapeHtml(city.name) + '</text></g>'; }).join('');
+  var cities = visitedCities.map(function(city) { var p = mapGeometry.project(city.coordinates); return '<g class="city-marker" data-map-city="' + escapeHtml(city.name) + '" role="button" tabindex="0" aria-label="查看' + escapeHtml(city.name) + '的回忆" transform="translate(' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')"><circle class="city-hit-area" r="24"/><circle r="7"/><circle class="city-core" r="2.6"/><text x="11" y="-10">' + escapeHtml(city.name) + '</text></g>'; }).join('');
   var photoPins = mapPhotos.map(function(photo, index) { var p = mapGeometry.project(photo.coordinates), shift = (index % 3) * 13; return '<g class="photo-pin" transform="translate(' + (p[0] - 25 + shift).toFixed(1) + ' ' + (p[1] - 72 - shift).toFixed(1) + ')" filter="url(#route-shadow)"><rect width="50" height="62" rx="5"/><image href="' + escapeHtml(photo.url || '') + '" x="5" y="5" width="40" height="39" preserveAspectRatio="xMidYMid slice"/><text x="25" y="56">' + escapeHtml(String(photo.date || '').slice(5, 10).replace('-', '.')) + '</text></g>'; }).join('');
   return '<g class="route-layer">' + routes + cities + photoPins + '</g>';
 }
@@ -2807,15 +2948,31 @@ function bindMapInteractions(container) {
   container.querySelectorAll('[data-map-action]').forEach(function(button) { button.addEventListener('click', function() {
     var action = button.dataset.mapAction;
     if (action === 'reset') mapView = { scale: 1, x: 0, y: 0 };
+    if (action === 'routes') mapView = Object.assign({}, mapRouteView);
+    if (action === 'fullscreen') openFullScreenMap();
     if (action === 'zoom-in') mapView.scale = Math.min(12, mapView.scale * 1.3);
     if (action === 'zoom-out') mapView.scale = Math.max(1, mapView.scale / 1.3);
     scheduleMapView();
   }); });
-  svg.addEventListener('wheel', function(event) { event.preventDefault(); mapView.scale = Math.max(1, Math.min(12, mapView.scale * (event.deltaY < 0 ? 1.14 : 1 / 1.14))); scheduleMapView(); }, { passive: false });
-  svg.addEventListener('pointerdown', function(event) { mapDrag = { x: event.clientX, y: event.clientY, startX: mapView.x, startY: mapView.y }; svg.setPointerCapture(event.pointerId); });
-  svg.addEventListener('pointermove', function(event) { if (!mapDrag) return; mapView.x = mapDrag.startX + event.clientX - mapDrag.x; mapView.y = mapDrag.startY + event.clientY - mapDrag.y; scheduleMapView(); });
-  svg.addEventListener('pointerup', function() { mapDrag = null; });
+  svg.addEventListener('wheel', function(event) { if (!event.ctrlKey && !event.metaKey && !document.querySelector('#map-dialog').open) return; event.preventDefault(); mapView.scale = Math.max(1, Math.min(12, mapView.scale * (event.deltaY < 0 ? 1.14 : 1 / 1.14))); scheduleMapView(); }, { passive: false });
+  svg.addEventListener('pointerdown', function(event) { if (event.target.closest('[data-map-city]') || (event.pointerType === 'touch' && !document.querySelector('#map-dialog').open)) { mapDrag = null; return; } mapDrag = { x: event.clientX, y: event.clientY, startX: mapView.x, startY: mapView.y, moved: false }; svg.setPointerCapture(event.pointerId); });
+  svg.addEventListener('pointermove', function(event) {
+    if (!mapDrag) return;
+    var distanceX = event.clientX - mapDrag.x, distanceY = event.clientY - mapDrag.y;
+    mapDrag.moved = mapDrag.moved || Math.hypot(distanceX, distanceY) > 6;
+    var matrix = svg.getScreenCTM();
+    var pixelScale = matrix ? Math.abs(matrix.a) : 1;
+    mapView.x = mapDrag.startX + distanceX / pixelScale;
+    mapView.y = mapDrag.startY + distanceY / pixelScale;
+    scheduleMapView();
+  });
+  var dragged = false;
+  svg.addEventListener('pointerup', function() { dragged = !!(mapDrag && mapDrag.moved); mapDrag = null; });
   svg.addEventListener('pointercancel', function() { mapDrag = null; });
+  svg.querySelectorAll('[data-map-city]').forEach(function(marker) {
+    marker.addEventListener('click', function() { if (dragged) { dragged = false; return; } openCityMemories(marker.dataset.mapCity); });
+    marker.addEventListener('keydown', function(event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openCityMemories(marker.dataset.mapCity); } });
+  });
 }
 
 function scheduleMapView() {
@@ -2831,7 +2988,13 @@ function applyMapView() {
   var content = chinaMap.querySelector('.map-content');
   if (content) content.setAttribute('transform', 'translate(' + mapView.x.toFixed(1) + ' ' + mapView.y.toFixed(1) + ') translate(500 360) scale(' + mapView.scale.toFixed(3) + ') translate(-500 -360)');
   chinaMap.classList.toggle('is-zoomed', mapView.scale > 1.35);
-  chinaMap.classList.toggle('is-city-detail', mapView.scale >= 3);
+  chinaMap.classList.toggle('is-city-detail', mapView.scale >= 2);
+  var renderMatrix = chinaMap.getScreenCTM();
+  var markerScale = 1 / (mapView.scale * (renderMatrix ? Math.abs(renderMatrix.a) : 1));
+  chinaMap.querySelectorAll('.city-marker, .route-badge').forEach(function(marker) {
+    var base = marker.getAttribute('transform').split(' scale(')[0];
+    marker.setAttribute('transform', base + ' scale(' + markerScale.toFixed(3) + ')');
+  });
   updateCityLabelLayout();
 }
 
@@ -3012,6 +3175,377 @@ function updateChinaMapMarkers(visitedCities) {
 }
 
 // ========== Utilities ==========
+function visibilityButton(kind, item) {
+  if (!state.isMember || !item.id) return '';
+  return '<button type="button" class="visibility-toggle" data-visibility-table="' + kind + '" data-visibility-id="' + escapeHtml(item.id) + '">' + (item.is_public ? '公开精选 · 收回' : '仅我们可见 · 设为精选') + '</button>';
+}
+
+async function toggleVisibility(button) {
+  if (!requireAuthenticated() || !state.isMember) return;
+  var kind = button.dataset.visibilityTable;
+  if (['plans', 'records', 'todos', 'photos'].indexOf(kind) < 0) return;
+  var item = state[kind].find(function(row) { return String(row.id) === button.dataset.visibilityId; });
+  if (!item) return;
+  var next = !item.is_public;
+  if (!(await confirmAction(next ? '将这条内容设为公开精选？所有访客都能阅读它和它包含的照片。如果照片在其他私密记录中复用，同一张照片也会公开。' : '将这条内容收回私密空间？已打开的临时照片链接最多还可使用 15 分钟。', next ? '设为公开精选' : '收回私密空间'))) return;
+  button.disabled = true;
+  try {
+    await state.client.update(tables[kind], item.id, { is_public: next });
+    var rows = await state.client.select(tables[kind]);
+    var updated = rows.find(function(row) { return String(row.id) === String(item.id); });
+    if (!updated || updated.is_public !== next) throw new Error('可见范围没有更新，请重试。');
+    item.is_public = next;
+    privateMediaLinks.clear();
+    await preparePrivateMedia();
+    renderAll();
+  } catch (error) { showCloudNotice(error.message || '修改可见范围失败。', true); }
+  finally { button.disabled = false; }
+}
+
+let editingGalleryTripId = null;
+function openGalleryTrip(id) {
+  if (!requireAuthenticated()) return;
+  var photo = state.photos.find(function(item) { return String(item.id) === String(id); });
+  if (!photo) return;
+  editingGalleryTripId = photo.id;
+  var select = document.querySelector('#gallery-trip-select');
+  select.innerHTML = '<option value="">暂不关联</option>' + getTravelGroups().map(function(group) {
+    return '<option value="' + escapeHtml(group.key) + '">' + escapeHtml(group.city + ' · ' + window.MapLabelLayout.formatDateRange(group.date)) + '</option>';
+  }).join('');
+  select.value = photo.trip_key || '';
+  document.querySelector('#gallery-trip-status').textContent = '';
+  document.querySelector('#gallery-trip-dialog').showModal();
+}
+
+async function saveGalleryTrip(event) {
+  event.preventDefault();
+  if (!requireAuthenticated()) return;
+  var photo = state.photos.find(function(item) { return String(item.id) === String(editingGalleryTripId); });
+  if (!photo) return;
+  var submittedId = photo.id;
+  var key = event.target.elements.trip_key.value || null;
+  var button = event.target.querySelector('[type="submit"]');
+  button.disabled = true;
+  try {
+    if (!state.backendReady) throw new Error('请连接网络后保存。');
+    await state.client.update(tables.photos, submittedId, { trip_key: key });
+    photo.trip_key = key;
+    renderAll();
+    if (editingGalleryTripId === submittedId) document.querySelector('#gallery-trip-dialog').close();
+  } catch (error) { document.querySelector('#gallery-trip-status').textContent = error.message || '保存没有成功。'; }
+  finally { button.disabled = false; }
+}
+
+async function preparePrivateSpace() {
+  try {
+    var member = await state.client.rpc('is_love_member');
+    state.privacyReady = typeof member === 'boolean';
+    state.isMember = member === true;
+  } catch (_) {
+    state.privacyReady = false;
+    state.isMember = false;
+    setCloudStatus('offline');
+    showCloudNotice('私密阅读尚未完成配置，已暂停读取云端内容。', true);
+  }
+  updateAuthUi();
+  var intro = document.querySelector('#privacy-notice');
+  if (intro) intro.textContent = state.isMember ? '我们的私密空间 · 可逐项选择公开精选' : '这里只展示公开精选。登录后，我们可以重温完整的故事。';
+}
+
+function connectPrivateStores() {
+  var owner = state.isMember && state.authUser ? state.authUser.id : 'public';
+  if (state.isMember && window.localStorage) {
+    try {
+      var importedKey = 'dating-web:legacy-recovery:imported';
+      var targetKey = 'dating-web:data:private:v2:' + owner;
+      if (!window.localStorage.getItem(importedKey) && !window.localStorage.getItem(targetKey)) {
+        var legacy = window.CloudDataClient.createSnapshotStore(window.localStorage, 'dating-web:data:v1').load();
+        var pending = legacy.records.filter(function(record) { return record.pending_sync; });
+        if (pending.length) window.localStorage.setItem(targetKey, JSON.stringify({ plans: [], records: pending, todos: [], photos: [], capsules: [] }));
+        var draft = window.localStorage.getItem('dating-web:record-draft:v1');
+        if (draft) window.localStorage.setItem('dating-web:record-draft:v2:' + owner, draft);
+        window.localStorage.setItem(importedKey, owner);
+      }
+    } catch (_) { /* Keep legacy data untouched if recovery cannot be copied. */ }
+  }
+  if (window.CloudDataClient && window.CloudDataClient.createSnapshotStore) state.snapshotStore = window.CloudDataClient.createSnapshotStore(window.localStorage, 'dating-web:data:private:v2:' + owner);
+  state.recordDraftStore = state.isMember && window.RecordRecovery && window.RecordRecovery.createDraftStore ? window.RecordRecovery.createDraftStore(window.localStorage, 'dating-web:record-draft:v2:' + owner) : null;
+}
+
+function privateMediaRef(url) {
+  return window.StorageObjectRef && window.StorageObjectRef.parsePublicObjectUrl(url, {
+    primaryUrl: supabaseConfig.url, secondaryUrl: storageConfig.url, bucket: storageBucket,
+  });
+}
+
+function visibleRows(rows) {
+  return state.privacyReady && !state.isMember ? rows.filter(function(row) { return row.is_public === true; }) : rows;
+}
+
+function privateMediaUrl(url) {
+  var signed = privateMediaLinks.get(url);
+  if (signed && signed.expiresAt > Date.now()) return signed.url;
+  // Local previews and external pictures do not need a storage signature.
+  return state.privacyReady && privateMediaRef(url) ? '' : url;
+}
+
+let privateMediaPending = null;
+async function preparePrivateMedia(force) {
+  if (!state.privacyReady || !state.client || !state.client.signRead) return false;
+  if (privateMediaPending) return privateMediaPending;
+  var generation = authMutationGeneration;
+  var objects = new Map();
+  var media = state.photos.concat(state.records.flatMap(function(record) { return window.StoryData.normalizeRecord(record).photos; }),
+    state.capsules.flatMap(function(capsule) { return Array.isArray(capsule.photos) ? capsule.photos : []; }),
+    state.todos.flatMap(function(todo) { return Array.isArray(todo.completion_photos) ? todo.completion_photos : []; }));
+  if (state.authUser) media.push({ url: authProfile(state.authUser).avatarUrl });
+  media.forEach(function(item) {
+    if (!item || typeof item !== 'object') return;
+    ['url', 'motion_url', 'poster_url', 'cover_url'].forEach(function(field) {
+      var url = item[field], ref = privateMediaRef(url);
+      var existing = privateMediaLinks.get(url);
+      if (!ref || (!force && existing && existing.expiresAt > Date.now() + 30000)) return;
+      objects.set(url, ref);
+    });
+  });
+  if (!objects.size) return false;
+  privateMediaPending = (async function() {
+    var changed = false;
+    for (var backend of ['primary', 'secondary']) {
+      var entries = Array.from(objects.entries()).filter(function(entry) { return entry[1].backend === backend; });
+      for (var offset = 0; offset < entries.length; offset += 40) {
+        var chunk = entries.slice(offset, offset + 40);
+        try {
+          var results = await state.client.signRead(storageBucket, chunk.map(function(entry) { return entry[1].path; }), backend);
+          if (generation !== authMutationGeneration) return false;
+          results.forEach(function(result) {
+            var entry = chunk.find(function(item) { return item[1].path === result.path; });
+            if (entry) { privateMediaLinks.set(entry[0], { url: result.signedUrl, expiresAt: Date.now() + 850000 }); changed = true; }
+          });
+        } catch (_) { /* Each thumbnail retains its recoverable failure state. */ }
+      }
+    }
+    return changed;
+  })();
+  try { return await privateMediaPending; }
+  finally { privateMediaPending = null; }
+}
+
+async function awaitMediaThenOpen(items, index, trigger) {
+  await preparePrivateMedia();
+  if (!trigger.isConnected) return;
+  window.MediaViewer.open(items.map(function(item) {
+    return Object.assign({}, item, { url: privateMediaUrl(item.url), motion_url: item.motion_url ? privateMediaUrl(item.motion_url) : undefined });
+  }), index, trigger);
+}
+
+function initNavigationOffsets() {
+  var header = document.querySelector('.site-header');
+  if (!header) return;
+  function measure() {
+    var height = Math.ceil(header.getBoundingClientRect().height);
+    var statusHeight = cloudStatus ? Math.ceil(cloudStatus.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--nav-height', height + 'px');
+    document.documentElement.style.setProperty('--navigation-offset', (height + statusHeight) + 'px');
+  }
+  measure();
+  if (window.ResizeObserver) {
+    var observer = new ResizeObserver(measure);
+    observer.observe(header);
+    if (cloudStatus) observer.observe(cloudStatus);
+  }
+  window.addEventListener('resize', measure);
+}
+
+function getTravelGroups() {
+  var records = window.StoryData.sortRecords(state.records.map(function(record, index) {
+    var normalized = window.StoryData.normalizeRecord(record);
+    normalized._sourceIndex = index;
+    return normalized;
+  }));
+  return window.TravelExperience.groupTrips(records, state.plans).map(function(group) {
+    var gallery = state.photos.filter(function(photo) { return photo.trip_key === group.key; });
+    var seen = new Set(group.photos.map(function(photo) { return photo.url; }));
+    gallery.forEach(function(photo) { if (!seen.has(photo.url)) { seen.add(photo.url); group.photos.push(photo); } });
+    return group;
+  });
+}
+
+function bindTravelExperience() {
+  var search = document.querySelector('#todo-search');
+  if (search) search.addEventListener('input', function() { state.todoSearch = search.value.trim(); state.todoPage = 1; renderTodos(); });
+  var category = document.querySelector('#todo-category');
+  if (category) category.addEventListener('change', function() { state.todoCategory = category.value; state.todoPage = 1; renderTodos(); });
+  var todoLogin = document.querySelector('#todo-login');
+  if (todoLogin) todoLogin.addEventListener('click', function() { showAuthDialog('登录后，写下一件想一起完成的事。'); });
+  document.addEventListener('click', function(event) {
+    var button = event.target.closest && event.target.closest('[data-trip-key]');
+    if (button) openTripStory(button.dataset.tripKey);
+    var wish = event.target.closest && event.target.closest('[data-wish-memory]');
+    if (wish) openWishMemory(Number(wish.dataset.wishMemory));
+    var photo = event.target.closest && event.target.closest('[data-gallery-trip]');
+    if (photo) openGalleryTrip(photo.dataset.galleryTrip);
+    var visibility = event.target.closest && event.target.closest('[data-visibility-table]');
+    if (visibility) toggleVisibility(visibility);
+  });
+  var storyDialog = document.querySelector('#trip-story-dialog');
+  if (storyDialog) {
+    document.querySelector('#trip-story-close').addEventListener('click', function() { storyDialog.close(); });
+    storyDialog.addEventListener('close', function() { storyDialog.querySelectorAll('video').forEach(function(video) { video.pause(); }); });
+  }
+  var mapDialog = document.querySelector('#map-dialog');
+  if (mapDialog) {
+    document.querySelector('#map-dialog-close').addEventListener('click', function() { mapDialog.close(); });
+    mapDialog.addEventListener('close', function() {
+      var placeholder = document.querySelector('#map-placeholder');
+      var map = document.querySelector('#footprint-map');
+      if (placeholder && map) { placeholder.replaceWith(map); scheduleMapView(); }
+    });
+  }
+  document.querySelector('#wish-memory-close').addEventListener('click', function() { document.querySelector('#wish-memory-dialog').close(); });
+  document.querySelector('#wish-memory-form').addEventListener('submit', saveWishMemory);
+  document.querySelector('#gallery-trip-close').addEventListener('click', function() { document.querySelector('#gallery-trip-dialog').close(); });
+  document.querySelector('#gallery-trip-form').addEventListener('submit', saveGalleryTrip);
+}
+
+function localTodayIso() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+let editingWishId = null;
+function openWishMemory(index) {
+  if (!requireAuthenticated()) return;
+  var todo = state.todos[index];
+  if (!todo || !todo.id) return;
+  var form = document.querySelector('#wish-memory-form');
+  form.reset();
+  editingWishId = todo.id;
+  document.querySelector('#wish-memory-title').textContent = todo.text;
+  form.elements.category.value = todo.category || '未分类';
+  form.elements.completed_on.value = todo.completed_on || '';
+  form.elements.completion_note.value = todo.completion_note || '';
+  form.elements.trip_key.innerHTML = '<option value="">暂不关联</option>' + getTravelGroups().map(function(group) {
+    return '<option value="' + escapeHtml(group.key) + '">' + escapeHtml(group.city + ' · ' + window.MapLabelLayout.formatDateRange(group.date)) + '</option>';
+  }).join('');
+  form.elements.trip_key.value = todo.trip_key || '';
+  document.querySelector('#wish-memory-photo-count').textContent = '已保存 ' + (Array.isArray(todo.completion_photos) ? todo.completion_photos.length : 0) + ' 张照片';
+  document.querySelector('#wish-memory-status').textContent = '';
+  form.elements.completed_on.disabled = !todo.done;
+  document.querySelector('#wish-memory-dialog').showModal();
+}
+
+async function saveWishMemory(event) {
+  event.preventDefault();
+  if (!requireAuthenticated()) return;
+  var todo = state.todos.find(function(item) { return String(item.id) === String(editingWishId); });
+  if (!todo) return;
+  var form = event.target;
+  var status = document.querySelector('#wish-memory-status');
+  var button = form.querySelector('[type="submit"]');
+  var submittedId = todo.id;
+  var existing = Array.isArray(todo.completion_photos) ? todo.completion_photos.slice() : [];
+  var files = Array.from(form.elements.photos.files);
+  var selection = window.LivePhotoMedia.selectMedia(files, existing.length, 6);
+  if (selection.rejectedCount || selection.overflowCount || selection.items.some(function(item) { return item.kind !== 'image'; })) {
+    status.textContent = '请选择普通照片，每个愿望最多保留 6 张。'; return;
+  }
+  var values = { category: form.elements.category.value, completed_on: todo.done ? form.elements.completed_on.value || null : null,
+    completion_note: form.elements.completion_note.value.trim(), trip_key: form.elements.trip_key.value || null };
+  if (values.completed_on && values.completed_on > localTodayIso()) { status.textContent = '完成日期不能晚于今天。'; return; }
+  button.disabled = true;
+  var uploaded = [];
+  try {
+    if (!state.backendReady) throw new Error('请连接网络后保存，填写的内容仍然保留。');
+    status.textContent = '正在保存回忆…';
+    uploaded = await uploadStoryFiles(selection.items, 'records');
+    values.completion_photos = existing.concat(uploaded);
+    await state.client.update(tables.todos, submittedId, values);
+    Object.assign(todo, values);
+    await preparePrivateMedia();
+    renderAll();
+    if (editingWishId === submittedId) document.querySelector('#wish-memory-dialog').close();
+  } catch (error) {
+    if (uploaded.length || error.uploadedMedia) await cleanupUploadedRecordMedia(uploaded.length ? uploaded : error.uploadedMedia);
+    status.textContent = error.message || '保存没有成功，请重试。';
+  } finally { button.disabled = false; }
+}
+
+function openFullScreenMap() {
+  var dialog = document.querySelector('#map-dialog');
+  var map = document.querySelector('#footprint-map');
+  if (!dialog || !map || dialog.open) return;
+  var placeholder = document.createElement('div');
+  placeholder.id = 'map-placeholder';
+  placeholder.style.height = map.getBoundingClientRect().height + 'px';
+  map.before(placeholder);
+  document.querySelector('#map-dialog-content').appendChild(map);
+  dialog.showModal();
+  scheduleMapView();
+}
+
+function tripRouteMarkup(group) {
+  if (!group.plans.length) return '<p class="muted">这次旅行还没有关联的路线计划。</p>';
+  return group.plans.map(function(plan) {
+    return '<div class="trip-story-route"><strong>' + escapeHtml(plan.title) + '</strong>' + normalizePlanSegments(plan).map(function(segment) {
+      return '<p>' + (segment.direction === 'return' ? '返程 · ' : '去程 · ') + escapeHtml(segment.from + ' → ' + segment.to + ' · ' + segment.transport) + '</p>';
+    }).join('') + '</div>';
+  }).join('');
+}
+
+function openCityMemories(city) {
+  var groups = getTravelGroups().filter(function(group) { return window.MapLabelLayout.canonicalCityName(group.city) === window.MapLabelLayout.canonicalCityName(city); });
+  if (groups.length === 1) { openTripStory(groups[0].key); return; }
+  var dialog = document.querySelector('#trip-story-dialog');
+  document.querySelector('#trip-story-title').textContent = city + '的回忆';
+  document.querySelector('#trip-story-content').innerHTML = groups.length ? groups.map(function(group) {
+    return '<button type="button" class="ghost-button city-memory-link" data-trip-key="' + escapeHtml(group.key) + '">' + escapeHtml(window.MapLabelLayout.formatDateRange(group.date)) + ' · ' + escapeHtml(group.records[0].title) + '</button>';
+  }).join('') : '<p>这个城市还没有旅行记录，期待下一次写下回忆。</p>';
+  var mapDialog = document.querySelector('#map-dialog');
+  if (mapDialog.open) mapDialog.close();
+  if (!dialog.open) dialog.showModal();
+}
+
+function openTripStory(key) {
+  var group = getTravelGroups().find(function(item) { return item.key === key; });
+  if (!group) return;
+  var dialog = document.querySelector('#trip-story-dialog');
+  var content = document.querySelector('#trip-story-content');
+  document.querySelector('#trip-story-title').textContent = group.city ? group.city + ' · 我们的旅行' : group.records[0].title;
+  var viewerItems = viewerMediaItems(group.photos);
+  var wishes = state.todos.filter(function(todo) { return todo.done && todo.trip_key === group.key; });
+  content.innerHTML = '<p class="muted">' + escapeHtml(window.MapLabelLayout.formatDateRange(group.date)) + '</p><h3>一路走过</h3>' + tripRouteMarkup(group) +
+    '<h3>各自的记忆</h3>' + group.records.map(function(record, index) {
+      return '<article class="trip-perspective"><span class="story-author">' + escapeHtml(record.author_name || ('记录 ' + (index + 1) + ' · 暂未署名')) + '</span><h4>' + escapeHtml(record.title) + '</h4><p class="story-card-description">' + escapeHtml(record.description) + '</p>' +
+        (record.moods.length ? '<div class="story-moods">' + record.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join('') + '</div>' : '') + '</article>';
+    }).join('') + '<h3>共同相册 · ' + group.photos.length + ' 张</h3>' +
+    (group.photos.length ? '<div class="story-photos trip-shared-photos">' + group.photos.map(function(photo) { return mediaElementMarkup(photo, photo.name || group.city, false, viewerItems.indexOf(photo)); }).join('') + '</div>' : '<p class="muted">这次旅行还没有照片。</p>') +
+    '<h3>完成的愿望</h3>' + (wishes.length ? wishes.map(function(todo) {
+      var photos = Array.isArray(todo.completion_photos) ? todo.completion_photos : [];
+      var items = viewerMediaItems(photos);
+      return '<article class="trip-perspective"><h4>✓ ' + escapeHtml(todo.text) + '</h4>' + (todo.completed_on ? '<time>' + escapeHtml(todo.completed_on) + '</time>' : '') + '<p class="story-card-description">' + escapeHtml(todo.completion_note || '') + '</p>' +
+        (photos.length ? '<div class="story-photos wish-story-photos" data-wish-id="' + escapeHtml(todo.id) + '">' + photos.map(function(photo) { return mediaElementMarkup(photo, photo.name || todo.text, false, items.indexOf(photo)); }).join('') + '</div>' : '') + '</article>';
+    }).join('') : '<p class="muted">还没有关联到这次旅行的已完成愿望。</p>');
+  prepareLivePhotoPreviews(content);
+  registerMediaViewerGroup(content.querySelector('.trip-shared-photos'), group.photos);
+  content.querySelectorAll('[data-wish-id]').forEach(function(element) {
+    var todo = wishes.find(function(item) { return String(item.id) === element.dataset.wishId; });
+    if (todo) registerMediaViewerGroup(element, todo.completion_photos);
+  });
+  if (!dialog.open) dialog.showModal();
+}
+
+function renderRecentMemory() {
+  var container = document.querySelector('#recent-memory');
+  if (!container) return;
+  var group = getTravelGroups()[0];
+  if (!group) { container.hidden = true; return; }
+  container.hidden = false;
+  container.innerHTML = '<div><span class="section-label">Latest Memory</span><h2>最近一次回忆</h2><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(group.date)) + '</time><h3>' + escapeHtml(group.records[0].title) + '</h3><p class="recent-memory-copy">' + escapeHtml(group.records[0].description) + '</p><button class="ghost-button" type="button" data-trip-key="' + escapeHtml(group.key) + '">重温这次旅行 →</button></div>' +
+    (group.photos.length ? '<div class="recent-memory-photo">' + mediaElementMarkup(group.photos[0], group.photos[0].name || group.city, false, 0) + '</div>' : '');
+  prepareLivePhotoPreviews(container);
+  registerMediaViewerGroup(container.querySelector('.recent-memory-photo'), group.photos);
+}
+
 function transportVisual(transport) {
   return transportVisuals[normalizeTransport(transport)] || transportVisuals.其他;
 }

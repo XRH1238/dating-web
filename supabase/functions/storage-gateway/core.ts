@@ -7,6 +7,8 @@ export interface GatewayDeps {
   verifyUser(token: string): Promise<unknown>;
   createSignedUpload(backend: "primary" | "secondary", bucket: string, path: string): Promise<string>;
   removeObjects(backend: "primary" | "secondary", bucket: string, paths: string[]): Promise<void>;
+  canReadObjects?(token: string | null, backend: "primary" | "secondary", paths: string[]): Promise<boolean>;
+  createSignedRead?(backend: "primary" | "secondary", bucket: string, path: string): Promise<string>;
 }
 
 const UPLOAD_BACKEND = "secondary";
@@ -37,6 +39,7 @@ function corsHeaders(origin: string | null): HeadersInit {
 function jsonResponse(request: Request, status: number, body: unknown, extraHeaders?: HeadersInit): Response {
   const headers = new Headers(corsHeaders(allowedOrigin(request)));
   headers.set("Content-Type", "application/json; charset=utf-8");
+  headers.set("Cache-Control", "no-store");
   if (extraHeaders) new Headers(extraHeaders).forEach((value, name) => headers.set(name, value));
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -123,6 +126,29 @@ export async function handleStorageGateway(request: Request, deps: GatewayDeps):
   }
 
   const token = bearerToken(request);
+  if (body.action === "sign-read") {
+    const backend = allowedBackend(body, deps);
+    if (!backend || body.bucket !== FIXED_BUCKET || !Array.isArray(body.paths) ||
+        body.paths.length < 1 || body.paths.length > MAX_DELETE_PATHS ||
+        !body.paths.every(isSafeObjectPath) || new Set(body.paths).size !== body.paths.length) {
+      return errorResponse(request, 400, "invalid_paths", "Read paths are not allowed");
+    }
+    if (!deps.canReadObjects || !deps.createSignedRead) {
+      return errorResponse(request, 503, "read_unavailable", "Private media is not configured");
+    }
+    const target = body.backend === "primary" ? "primary" : "secondary";
+    try {
+      if (!await deps.canReadObjects(token, target, body.paths as string[])) {
+        return errorResponse(request, 403, "forbidden", "Media is private");
+      }
+      const urls = await Promise.all((body.paths as string[]).map(async (path) => ({
+        path, signedUrl: await deps.createSignedRead!(target, FIXED_BUCKET, path),
+      })));
+      return jsonResponse(request, 200, { urls, expiresIn: 900 });
+    } catch (_) {
+      return errorResponse(request, 502, "storage_error", "Storage operation failed");
+    }
+  }
   if (!token) return errorResponse(request, 401, "unauthorized", "A valid login is required");
   try {
     if (!await deps.verifyUser(token)) {

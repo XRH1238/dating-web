@@ -314,6 +314,28 @@
           return parse(response);
         });
       },
+      rpc: async function(name) {
+        var response = await request(baseUrl + '/rest/v1/rpc/' + safeTable(name), {
+          method: 'POST', headers: await databaseHeaders({ 'Content-Type': 'application/json' }, false), body: '{}',
+        });
+        return parse(response);
+      },
+      signRead: async function(bucket, paths, backend) {
+        var token = await tokenFromGetter(true);
+        var response = await request(storageGatewayUrl, {
+          method: 'POST', headers: Object.assign({ apikey: key, 'Content-Type': 'application/json' }, token ? { Authorization: 'Bearer ' + token } : {}),
+          body: JSON.stringify({ action: 'sign-read', backend: safeStorageBackend(backend || storageBackend), bucket: safeBucket(bucket), paths: safePaths(paths) }),
+        });
+        var result = await parse(response);
+        var expectedOrigin = new URL(backend === 'primary' ? baseUrl : storageBaseUrl).origin;
+        (result.urls || []).forEach(function(item) {
+          var url = new URL(item.signedUrl);
+          var prefix = '/storage/v1/object/sign/' + encodeURIComponent(bucket) + '/';
+          if (url.origin !== expectedOrigin || url.username || url.password ||
+              url.pathname !== prefix + encodedPath(item.path) || paths.indexOf(item.path) === -1) throw new Error('私密媒体地址无效');
+        });
+        return result.urls || [];
+      },
       getPublicUrl: function(bucket, path) {
         var encodedPath = path.split("/").map(encodeURIComponent).join("/");
         return storageBaseUrl + "/storage/v1/object/public/" + safeBucket(bucket) + "/" + encodedPath;

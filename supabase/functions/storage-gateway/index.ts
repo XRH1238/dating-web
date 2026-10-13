@@ -65,6 +65,27 @@ const storageClients = {
   }),
 };
 
+async function verifiedMember(token: string): Promise<boolean> {
+  const { data, error } = await mainClient.auth.getUser(token);
+  if (error || !data.user) return false;
+  const membership = await storageClients.primary.from('love_members').select('user_id')
+    .eq('user_id', data.user.id).maybeSingle();
+  return !membership.error && !!membership.data;
+}
+
+function publicMediaPaths(value: unknown, backend: 'primary' | 'secondary'): string[] {
+  const media = Array.isArray(value) ? value : [];
+  const expectedOrigin = new URL(backend === 'primary' ? mainUrl : storageBackend.url).origin;
+  const prefix = '/storage/v1/object/public/love-photos/';
+  return media.flatMap((item) => ['url', 'motion_url', 'poster_url', 'cover_url'].map((field) => {
+    try {
+      const parsed = new URL(String(item?.[field] || ''));
+      if (parsed.origin !== expectedOrigin || !parsed.pathname.startsWith(prefix)) return '';
+      return parsed.pathname.slice(prefix.length).split('/').map(decodeURIComponent).join('/');
+    } catch (_) { return ''; }
+  }).filter(Boolean));
+}
+
 Deno.serve((request: Request) => handleStorageGateway(request, {
   backends: {
     primary: { bucket: "love-photos" },
@@ -73,7 +94,27 @@ Deno.serve((request: Request) => handleStorageGateway(request, {
   async verifyUser(token: string) {
     const { data, error } = await mainClient.auth.getUser(token);
     if (error || !data.user) return null;
+    if (!await verifiedMember(token)) return null;
     return { id: data.user.id };
+  },
+  async canReadObjects(token, backend, paths) {
+    if (token && await verifiedMember(token)) return true;
+    // Never sign a private path merely because someone knows its old public URL.
+    const [photos, records, todos] = await Promise.all([
+      storageClients.primary.from('love_photos').select('url,motion_url').eq('is_public', true),
+      storageClients.primary.from('love_records').select('photos').eq('is_public', true),
+      storageClients.primary.from('love_todos').select('completion_photos').eq('is_public', true),
+    ]);
+    if (photos.error || records.error || todos.error) return false;
+    const allowed = new Set(publicMediaPaths(photos.data, backend));
+    (records.data || []).forEach((row) => publicMediaPaths(row.photos, backend).forEach((path) => allowed.add(path)));
+    (todos.data || []).forEach((row) => publicMediaPaths(row.completion_photos, backend).forEach((path) => allowed.add(path)));
+    return paths.every((path) => allowed.has(path));
+  },
+  async createSignedRead(backend, bucket, path) {
+    const { data, error } = await storageClients[backend].storage.from(bucket).createSignedUrl(path, 900);
+    if (error || !data?.signedUrl) throw new Error('Unable to sign media');
+    return data.signedUrl;
   },
   async createSignedUpload(backend: "primary" | "secondary", bucket: string, path: string) {
     const { data, error } = await storageClients[backend].storage.from(bucket)
