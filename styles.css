@@ -3345,6 +3345,8 @@ body[data-member="true"] .anniversary-login { display: none; }
 .todo-workspace .inline-form { grid-template-columns: minmax(0, 1fr) minmax(100px, auto) auto; }
 .wish-memory-link { grid-column: 1; justify-self: start; border: 0; background: transparent; color: #93533f; font: inherit; font-size: 12px; padding: 8px 0; cursor: pointer; }
 .wish-memory-note { grid-column: 1 / -1; margin: 0; font-size: 13px; color: #715c4d; white-space: pre-wrap; }
+.todo-completion-photos { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 320px; }
+.todo-completion-photos img, .todo-completion-photos video { width: 100%; height: 88px; object-fit: cover; border-radius: 6px; }
 #wish-memory-form { display: grid; gap: 16px; }
 #wish-memory-form label { display: grid; gap: 8px; }
 .milestone-item.is-next { background: #fff6e5; border: 1px solid #d9a55b; }

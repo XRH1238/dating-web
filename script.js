@@ -2456,7 +2456,7 @@ function renderAll() {
   renderAnniversary();
   renderFootprintMap();
   if (state.privacyReady) preparePrivateMedia().then(function(changed) {
-    if (changed) { updateAuthUi(); renderRecords(); renderPhotos(); renderRecentMemory(); renderFootprintMap(); }
+    if (changed) { updateAuthUi(); renderRecords(); renderTodos(); renderPhotos(); renderRecentMemory(); renderFootprintMap(); }
   });
   return saveCachedData();
 }
@@ -2724,6 +2724,8 @@ function renderTodos() {
   list.innerHTML = '<div class="todo-items-grid">' + todoColumns.map(function(column) {
     return '<div class="todo-column">' + column.map(function(entry) {
       var t = entry.todo;
+      var completionPhotos = t.done && Array.isArray(t.completion_photos) ? t.completion_photos : [];
+      var completionViewerItems = viewerMediaItems(completionPhotos);
       var actionLabel = t.done ? '标记为未完成' : '标记为已完成';
       var todoActions = state.authUser ? '<span class="todo-actions"><button class="todo-toggle" type="button" aria-label="' + actionLabel + '：' +
         escapeHtml(t.text) + '" data-toggle-todo="' + entry.index + '">' + (t.done ? '✓' : '') +
@@ -2733,7 +2735,8 @@ function renderTodos() {
         '</span><span class="todo-completion">' + (t.done ? '✓ 已完成' : '待完成') + (t.category ? ' · ' + escapeHtml(t.category) : '') +
         (t.done && t.completed_on ? ' · ' + escapeHtml(t.completed_on) : '') + '</span>' + todoActions +
         (state.isMember ? '<button class="wish-memory-link" type="button" data-wish-memory="' + entry.index + '">' + (t.done ? '留一句回忆' : '整理愿望') + '</button>' : '') +
-        (t.done && t.completion_note ? '<p class="wish-memory-note">' + escapeHtml(t.completion_note) + '</p>' : '') + visibilityButton('todos', t) + '</div>';
+        (t.done && t.completion_note ? '<p class="wish-memory-note">' + escapeHtml(t.completion_note) + '</p>' : '') +
+        (completionPhotos.length ? '<div class="todo-completion-photos" data-wish-photo-index="' + entry.index + '">' + completionPhotos.map(function(photo) { return mediaElementMarkup(photo, photo.name || t.text, false, completionViewerItems.indexOf(photo)); }).join('') + '</div>' : '') + visibilityButton('todos', t) + '</div>';
     }).join("") + '</div>';
   }).join("") + '</div>';
   if (pageCount > 1) list.innerHTML += '<nav class="todo-pagination" aria-label="待办分页"><button type="button" data-todo-page="' + (state.todoPage - 1) + '"' + (state.todoPage === 1 ? ' disabled' : '') + '>上一页</button><span>' + state.todoPage + ' / ' + pageCount + '</span><button type="button" data-todo-page="' + (state.todoPage + 1) + '"' + (state.todoPage === pageCount ? ' disabled' : '') + '>下一页</button></nav>';
@@ -2744,6 +2747,11 @@ function renderTodos() {
     btn.addEventListener("click", function() { deleteTodo(parseInt(btn.dataset.deleteTodo)); });
   });
   list.querySelectorAll("[data-todo-page]").forEach(function(btn) { btn.addEventListener("click", function() { state.todoPage = parseInt(btn.dataset.todoPage); renderTodos(); }); });
+  prepareLivePhotoPreviews(list);
+  list.querySelectorAll('[data-wish-photo-index]').forEach(function(group) {
+    var todo = state.todos[Number(group.dataset.wishPhotoIndex)];
+    if (todo) registerMediaViewerGroup(group, todo.completion_photos);
+  });
 }
 
 // ========== Render Photos ==========
@@ -3380,8 +3388,9 @@ function getTravelGroups() {
   }));
   return window.TravelExperience.groupTrips(records, state.plans).map(function(group) {
     var gallery = state.photos.filter(function(photo) { return photo.trip_key === group.key; });
-    var seen = new Set(group.photos.map(function(photo) { return photo.url; }));
-    gallery.forEach(function(photo) { if (!seen.has(photo.url)) { seen.add(photo.url); group.photos.push(photo); } });
+    function photoKey(photo) { return JSON.stringify([photo.url, photo.motion_url || '']); }
+    var seen = new Set(group.photos.map(photoKey));
+    gallery.forEach(function(photo) { var key = photoKey(photo); if (!seen.has(key)) { seen.add(key); group.photos.push(photo); } });
     return group;
   });
 }
