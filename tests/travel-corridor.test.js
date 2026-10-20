@@ -52,12 +52,22 @@ test('人工选片只保存标识与次序，并能关联已核实的记录，�
   assert.deepEqual(corridor.entries(photos,[],[{id:'missing'}]).map(x=>x.media.id),['a','b','c']);
 });
 
-function browserFixture(deferImages) {
+function browserFixture() {
   const images=[], classes=new Set();
-  function node() { return {style:{},children:[],isConnected:true,open:false,
+  function node(tag) { const listeners={}; const element={style:{},children:[],isConnected:true,open:false,
     classList:{toggle:(name,on)=>on?classes.add(name):classes.delete(name)},
-    addEventListener(){},setAttribute(){},removeAttribute(){},
-    append(...children){this.children.push(...children);},replaceChildren(){this.children=[];}}; }
+    addEventListener(type,listener){listeners[type]=listener;},setAttribute(){},removeAttribute(){},
+    append(...children){this.children.push(...children);},replaceChildren(){
+      function disconnect(child){child.isConnected=false;child.children.forEach(disconnect);}
+      this.children.forEach(disconnect);this.children=[];
+    }};
+    if(tag==='img') {
+      images.push(element);
+      element.finish=function(){this.naturalWidth=1200;this.naturalHeight=800;if(listeners.load)listeners.load();};
+      element.fail=function(){if(listeners.error)listeners.error();};
+    }
+    return element;
+  }
   const parts=new Map();
   const dialog=node(); dialog.querySelector=()=>node();
   const doc={querySelector:()=>dialog,createElement:node};
@@ -66,15 +76,14 @@ function browserFixture(deferImages) {
   element.querySelectorAll=()=>[];
   const win={matchMedia:()=>({matches:true,addEventListener(){}}),
     setTimeout:()=>1,clearTimeout(){},
-    gsap:{matchMedia(){throw new Error('减少动态效果时不能创建动画');}},ScrollTrigger:{},
-    Image:class {constructor(){images.push(this);}set src(value){if(value&&!deferImages)this.finish();}finish(){this.naturalWidth=1200;this.naturalHeight=800;this.onload();}}};
+    gsap:{matchMedia(){throw new Error('减少动态效果时不能创建动画');}},ScrollTrigger:{}};
   const source=fs.readFileSync(path.join(__dirname,'../travel-corridor.js'),'utf8');
   vm.runInNewContext(source,{window:win});
   return {instance:win.TravelCorridor.create(element,{openMedia(){}}),images,parts,classes};
 }
 
 test('系统减少动态效果时所有照片可直接访问且不创建 GSAP 动画',async()=>{
-  const fixture=browserFixture(false);
+  const fixture=browserFixture();
   await fixture.instance.update({authenticated:true,photos:[{url:'a.jpg'},{url:'b.jpg'},{url:'c.jpg'}],records:[],status:'ready'});
   assert.ok(fixture.classes.has('is-flat'));
   assert.equal(fixture.parts.get('.corridor-wall').children.length,3);
@@ -82,7 +91,7 @@ test('系统减少动态效果时所有照片可直接访问且不创建 GSAP �
 });
 
 test('图片加载期间退出登录，迟到的图片结果不能重新插入私密照片',async()=>{
-  const fixture=browserFixture(true);
+  const fixture=browserFixture();
   const loading=fixture.instance.update({authenticated:true,photos:[{url:'private.jpg'}],records:[],status:'ready'});
   await fixture.instance.update({authenticated:false,photos:[],records:[],status:'ready'});
   fixture.images.forEach(image=>image.finish());
@@ -91,3 +100,32 @@ test('图片加载期间退出登录，迟到的图片结果不能重新插入�
   assert.match(fixture.parts.get('#corridor-status').textContent,/登录后/);
 });
 
+test('同批照片仍在加载时再次渲染，不能误报相册为空',async()=>{
+  const fixture=browserFixture();
+  const data={authenticated:true,photos:[{url:'slow.jpg'}],records:[],status:'ready'};
+  const loading=fixture.instance.update(data);
+  await fixture.instance.update(data);
+  assert.match(fixture.parts.get('#corridor-status').textContent,/正在/);
+  fixture.images.forEach(image=>image.finish());
+  await loading;
+});
+
+test('每张照片独立显示，一张慢图不能阻塞长廊和已加载的照片',async()=>{
+  const fixture=browserFixture();
+  fixture.instance.update({authenticated:true,photos:[{url:'fast.jpg'},{url:'slow.jpg'}],records:[],status:'ready'});
+  assert.equal(fixture.parts.get('.corridor-wall').children.length,2);
+  fixture.images[0].finish();
+  assert.equal(fixture.parts.get('#corridor-status').hidden,true);
+  assert.equal(fixture.parts.get('.corridor-wall').children.length,2);
+});
+
+test('照片全部加载失败后重复渲染，继续显示读取失败而非空相册',async()=>{
+  const fixture=browserFixture();
+  const data={authenticated:true,photos:[{url:'unavailable.jpg'}],records:[],status:'ready'};
+  const loading=fixture.instance.update(data);
+  fixture.images[0].fail();
+  await loading;
+  await fixture.instance.update(data);
+  assert.match(fixture.parts.get('#corridor-status').textContent,/未能加载/);
+  assert.equal(fixture.parts.get('#corridor-status').hidden,false);
+});

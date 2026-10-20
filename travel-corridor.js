@@ -83,6 +83,7 @@
     var media = root.matchMedia('(max-width: 700px)');
     var flat = false, authenticated = false, signature = '', version = 0, items = [], cards = [];
     var mm = null, tween = null, pointerCleanup = null, opener = null, selected = null;
+    var imageTimers = [];
     var camera = {progress: 0};
     function headerHeight() { return doc.querySelector('.site-header').getBoundingClientRect().height; }
 
@@ -197,18 +198,43 @@
     media.addEventListener('change',preferenceChanged);
 
     function draw(nextItems) {
+      imageTimers.forEach(function(timer) { root.clearTimeout(timer); });
+      imageTimers = [];
       items = nextItems;
       wall.replaceChildren();
+      var generation = version;
       cards = items.map(function(entry,index) {
         var card = doc.createElement('figure'); card.className = 'corridor-photo';
         var button = doc.createElement('button'); button.type = 'button';
         var label = entry.caption || (entry.record ? entry.record.title : entry.media.city || '旅途中的一刻');
         button.setAttribute('aria-label','查看回忆：' + label + '，第 ' + (index+1) + ' 张');
-        var img = doc.createElement('img'); img.src = entry.previewUrl; img.alt = label;
+        var img = doc.createElement('img'); img.alt = label;
         img.decoding = 'async'; img.width = entry.width || 1200; img.height = entry.height || 900;
+        var settled = false;
+        var timer = root.setTimeout(failed,30000);
+        imageTimers.push(timer);
+        function current() { return !settled && authenticated && generation === version && card.isConnected; }
+        function failed() {
+          if (!current()) return;
+          settled = true; root.clearTimeout(timer); entry.failed = true;
+          img.removeAttribute('src'); card.hidden = true; button.disabled = true;
+          if (items.every(function(item) { return item.failed; })) {
+            draw([]);
+            status.hidden = false; status.textContent = '照片暂时未能加载，请到相册重试。';
+          }
+        }
+        img.addEventListener('error',failed);
+        img.addEventListener('load',function() {
+          if (!current()) return;
+          settled = true; root.clearTimeout(timer);
+          entry.width = img.naturalWidth; entry.height = img.naturalHeight;
+          img.width = entry.width; img.height = entry.height;
+          status.hidden = true; status.textContent = '';
+        });
         var caption = doc.createElement('figcaption');
         caption.textContent = label;
         button.append(img); card.append(button,caption); wall.append(card);
+        img.src = entry.previewUrl;
         button.addEventListener('click',function() { openMemory(index,button); });
         button.addEventListener('focus',function() {
           if (!tween || !tween.scrollTrigger) return;
@@ -241,38 +267,22 @@
       });
       var nextSignature = JSON.stringify(candidates.map(function(entry) { return [entry.media.url,entry.previewUrl,entry.media.city,entry.record]; }));
       if (signature === nextSignature) {
-        if (!items.length) status.textContent = data.status === 'loading' ? '正在展开相册…' : data.status === 'error' ? '相册暂未连接，稍后刷新再看看。' : '相册还没有照片，去留下一段新的回忆吧。';
+        if (!candidates.length) status.textContent = data.status === 'loading' ? '正在展开相册…' : data.status === 'error' ? '相册暂未连接，稍后刷新再看看。' : '相册还没有照片，去留下一段新的回忆吧。';
         return;
       }
       signature = nextSignature;
       closeMemory();
-      var generation = ++version;
+      version++;
       if (!candidates.length) {
         draw([]);
         status.textContent = data.status === 'loading' ? '正在展开相册…' : data.status === 'error' ? '相册暂未连接，稍后刷新再看看。' : '相册还没有照片，去留下一段新的回忆吧。';
         return;
       }
-      status.hidden = false; status.textContent = '正在展开相册…';
-      // Sample across the complete album, loading at most six images concurrently.
+      // Insert each image immediately: a slow original must not hold the exhibition closed.
       var sample = candidates.filter(function(_,i) { return i % Math.max(1,Math.ceil(candidates.length/36)) === 0; }).slice(0,36);
-      var cursor = 0;
-      async function worker() {
-        while(cursor < sample.length && generation === version) {
-          var entry = sample[cursor++];
-          if (!entry.previewUrl) { entry.failed = true; continue; }
-          await new Promise(function(resolve) {
-            var image = new root.Image();
-            var timer = root.setTimeout(function() { entry.failed = true; image.src = ''; resolve(); },30000);
-            image.onload = function() { root.clearTimeout(timer); entry.width = image.naturalWidth; entry.height = image.naturalHeight; resolve(); };
-            image.onerror = function() { root.clearTimeout(timer); entry.failed = true; resolve(); };
-            image.src = entry.previewUrl;
-          });
-        }
-      }
-      await Promise.all(Array.from({length:Math.min(6,sample.length)},worker));
-      if (generation !== version || !authenticated) return;
-      draw(select(sample,14));
-      if (!items.length) status.textContent = '照片暂时未能加载，请到相册重试。';
+      draw(select(sample.filter(function(entry) { return !!entry.previewUrl; }),14));
+      status.hidden = false;
+      status.textContent = items.length || data.status === 'loading' ? '正在展开相册…' : '照片暂时未能加载，请到相册重试。';
     }
     return {update:update};
   }
