@@ -8,17 +8,6 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 const script = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 
-test('首页大图保持清晰并只在文字附近使用轻量遮罩', () => {
-  const overlayRule = styles.match(/\.hero-media::after\s*\{([\s\S]*?)\n\}/);
-  assert.ok(overlayRule, '缺少首页大图文字遮罩');
-  assert.match(overlayRule[1], /rgba\(47, 39, 48, 0\.4[0-9]\)/, '左侧遮罩应保持轻量');
-  assert.match(overlayRule[1], /transparent\s+6[0-9]%/, '遮罩应在文字区域外变为透明');
-  assert.doesNotMatch(overlayRule[1], /blur\(/, '首页大图遮罩不能使用虚化');
-
-  const mediaRule = styles.match(/\.hero-media span\s*\{([\s\S]*?)\n\}/);
-  assert.ok(mediaRule, '缺少首页大图样式');
-  assert.doesNotMatch(mediaRule[1], /filter\s*:/, '首页大图不能使用滤镜降低清晰度');
-});
 
 test('想做的事采用宽版工作区并保留红色情感文案', () => {
   assert.match(html, /<section class="section todo-workspace" id="todo">/);
@@ -68,26 +57,7 @@ test('艺术字装饰与筛选后的列表保持截图中的视觉层级', () =>
   assert.match(styles, /\.todo-filter\[aria-pressed="true"\]/);
 });
 
-test('首页采用梦幻主视觉与杂志式横向下一次出游信息条', () => {
-  assert.match(html, /<section class="hero hero-stage">/);
-  assert.match(html, /class="hero-effects" aria-hidden="true"/);
-  assert.match(html, /class="next-trip-strip"/);
-  assert.match(html, /id="next-trip-title"/);
-  assert.match(html, /id="next-trip-date"/);
-  assert.match(html, /id="next-trip-days"/);
-  assert.match(html, /id="next-trip-countdown"/);
-  assert.match(html, /assets\/images\/hero-romantic-santorini\.jpg/);
-  assert.match(html, /assets\/images\/trip-xiamen\.jpg/);
-});
 
-test('炫目动态包含分层入场、景深和行程流光', () => {
-  assert.match(styles, /@keyframes hero-title-reveal/);
-  assert.match(styles, /@keyframes hero-photo-drift/);
-  assert.match(styles, /@keyframes trip-strip-shine/);
-  assert.match(styles, /--hero-pointer-x/);
-  assert.match(styles, /\.hero-effects/);
-  assert.match(styles, /\.next-trip-strip\s*\{[^}]*grid-template-columns:/s);
-});
 
 test('功能概览在宽屏占满整行并在中等桌面尺寸放大卡片', () => {
   assert.match(styles, /\.intro-grid\s*\{[^}]*grid-template-columns:\s*1fr/s);
@@ -99,25 +69,7 @@ test('功能概览在宽屏占满整行并在中等桌面尺寸放大卡片', ()
   );
 });
 
-test('首页主图首次移入通过逐帧缓动过渡而不是直接跳到鼠标偏移', () => {
-  assert.match(script, /pointerenter/);
-  assert.match(script, /currentX\s*\+=\s*\(targetX\s*-\s*currentX\)\s*\*\s*0\.1[0-9]/);
-  assert.match(script, /currentY\s*\+=\s*\(targetY\s*-\s*currentY\)\s*\*\s*0\.1[0-9]/);
 
-  const heroMediaRule = styles.match(/\.hero-stage \.hero-media\s*\{([\s\S]*?)\n\}/);
-  assert.ok(heroMediaRule, '缺少首页主图容器样式');
-  assert.doesNotMatch(heroMediaRule[1], /transition:\s*transform/, '主图动画不应与 transform transition 竞争');
-});
-
-test('减少动态效果会停用首页动画和景深变化', () => {
-  const reducedMotion = styles.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/);
-  assert.ok(reducedMotion, '缺少减少动态效果规则');
-  assert.match(reducedMotion[1], /\.hero-media span/);
-  assert.match(reducedMotion[1], /\.hero-content/);
-  assert.match(reducedMotion[1], /\.next-trip-strip/);
-  assert.match(reducedMotion[1], /animation:\s*none/);
-  assert.match(reducedMotion[1], /transform:\s*none/);
-});
 
 test('首页行程摘要由计划数据驱动且动态初始化尊重系统偏好', () => {
   assert.match(script, /function renderNextTripSummary\(\)/);
@@ -127,8 +79,7 @@ test('首页行程摘要由计划数据驱动且动态初始化尊重系统偏�
   assert.match(script, /next-trip-days/);
   assert.match(script, /next-trip-countdown/);
   assert.match(script, /function initHeroMotion\(\)/);
-  assert.match(script, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
-  assert.match(script, /pointermove/);
+  assert.match(script, /TravelCorridor\.create/);
 });
 
 test('顶部行程条只显示进行中或未来计划且标签随状态变化', () => {
@@ -147,7 +98,7 @@ test('云端同步成功后状态条会自动收起', () => {
 
 test('本次修改的页面资源使用正确缓存版本', () => {
   ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261013-3'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261020-1'));
   });
   ['storage-object-ref.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-1'));
@@ -156,4 +107,27 @@ test('本次修改的页面资源使用正确缓存版本', () => {
   ['record-date-picker.js', 'record-moods.js', 'trip-planning.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260830-1'));
   });
+});
+
+const corridorCss = fs.readFileSync(path.join(root, 'travel-corridor.css'), 'utf8');
+const corridorScript = fs.readFileSync(path.join(root, 'travel-corridor.js'), 'utf8');
+test('首页使用真实相册长廊并保留全部功能锚点', () => {
+  assert.match(html, /id="travel-corridor"/);
+  assert.match(html, /一起走过的地方。/);
+  assert.match(html, /慢慢看，都是我们的回忆。/);
+  assert.doesNotMatch(html, /hero-effects|hero-glow|hero-sparkle|images.unsplash.com/);
+  ['anniversary','plans','records','todo','gallery'].forEach(id=>assert.match(html,new RegExp('id="'+id+'"')));
+  assert.match(script, /photos: state.photos, records: state.records/);
+});
+test('长廊提供平面模式、键盘按钮和系统减少动态效果适配', () => {
+  assert.match(html, /data-corridor-mode/);
+  assert.match(html, /data-corridor-step="-1"/);
+  assert.match(html, /data-corridor-step="1"/);
+  assert.match(html, /跳过长廊/);
+  assert.match(corridorScript, /prefers-reduced-motion: reduce/);
+  assert.match(corridorScript, /gsap.matchMedia/);
+  assert.match(corridorScript, /quickTo/);
+  assert.match(corridorCss, /prefers-reduced-motion:reduce/);
+  assert.match(corridorCss, /object-fit: contain|object-fit:contain/);
+  assert.doesNotMatch(corridorCss, /(?:^|[;\s])filter:|backdrop-filter:\s*blur|text-shadow:/);
 });

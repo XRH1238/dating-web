@@ -115,6 +115,8 @@ let cloudStatusTimer;
 let authMutationGeneration = 0;
 let remoteLoadPromise = null;
 let remoteLoadQueued = false;
+let homeCorridor = null;
+let homeCorridorStatus = "loading";
 let remoteLoadGeneration = -1;
 let pendingSyncPromise = null;
 const formEditRevisions = new WeakMap();
@@ -1318,6 +1320,7 @@ async function loadRemoteDataOnce(loadGeneration) {
   if (capsuleResult[0].status === "rejected") state.capsules = [];
   await preparePrivateMedia();
   if (loadGeneration !== authMutationGeneration) return;
+  homeCorridorStatus = coreResults[3].status === "rejected" ? "error" : "ready";
   renderAll();
   var failed = coreResults.some(function(result) { return result.status === "rejected"; });
   if (!failed) {
@@ -2556,57 +2559,24 @@ function renderNextTripSummary() {
 }
 
 function initHeroMotion() {
-  var hero = document.querySelector(".hero-stage");
-  if (!hero || !window.matchMedia || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  var motionFrame = 0;
-  var pointerActive = false;
-  var currentX = 0;
-  var currentY = 0;
-  var targetX = 0;
-  var targetY = 0;
-
-  function renderMotion() {
-    currentX += (targetX - currentX) * 0.14;
-    currentY += (targetY - currentY) * 0.14;
-    hero.style.setProperty("--hero-pointer-x", String(currentX) + "px");
-    hero.style.setProperty("--hero-pointer-y", String(currentY) + "px");
-
-    if (Math.abs(targetX - currentX) > 0.05 || Math.abs(targetY - currentY) > 0.05) {
-      motionFrame = requestAnimationFrame(renderMotion);
-      return;
-    }
-
-    currentX = targetX;
-    currentY = targetY;
-    hero.style.setProperty("--hero-pointer-x", String(currentX) + "px");
-    hero.style.setProperty("--hero-pointer-y", String(currentY) + "px");
-    motionFrame = 0;
-  }
-
-  function scheduleMotion() {
-    if (!motionFrame) motionFrame = requestAnimationFrame(renderMotion);
-  }
-
-  hero.addEventListener("pointerenter", function() {
-    pointerActive = true;
+  if (!window.TravelCorridor) return;
+  homeCorridor = window.TravelCorridor.create(document.querySelector("#travel-corridor"), {
+    selection: window.TravelCorridorSelection,
+    prepareMedia: preparePrivateMedia,
+    resolveUrl: privateMediaUrl,
+    recordForPhoto: function(photo) {
+      if (!photo.trip_key) return null;
+      var group = getTravelGroups().find(function(item) { return item.key === photo.trip_key; });
+      if (!group || !group.records.length) return null;
+      var record = group.records[0];
+      return { record: record, recordIndex: record._sourceIndex };
+    },
+    openMedia: function(photo, trigger) { awaitMediaThenOpen([photo], 0, trigger); }
   });
-
-  hero.addEventListener("pointermove", function(event) {
-    if (!pointerActive) return;
-    var rect = hero.getBoundingClientRect();
-    var x = (event.clientX - rect.left) / rect.width - 0.5;
-    var y = (event.clientY - rect.top) / rect.height - 0.5;
-    targetX = x * -14;
-    targetY = y * -10;
-    scheduleMotion();
-  });
-
-  hero.addEventListener("pointerleave", function() {
-    pointerActive = false;
-    targetX = 0;
-    targetY = 0;
-    scheduleMotion();
-  });
+}
+function renderHomeCorridor() {
+  if (homeCorridor) homeCorridor.update({ authenticated: !!state.authUser && state.isMember,
+    photos: state.photos, records: state.records, status: homeCorridorStatus });
 }
 
 // ========== Render Records ==========
@@ -2634,7 +2604,7 @@ function renderRecords() {
     var viewerItems = viewerMediaItems(r.photos);
     var recordActions = state.authUser ? ((r.id ? '<button class="story-edit" type="button" data-edit-record-id="' + escapeHtml(String(r.id)) + '" aria-label="编辑记录">编辑</button>' : '') +
       '<button class="story-delete" type="button" data-delete-record="' + originalIndex + '" aria-label="删除记录"><img src="assets/icons/trash.svg" alt="" /></button>' + visibilityButton('records', r)) : '';
-    return '<article class="story-card" data-record-city="' + escapeHtml(window.MapLabelLayout.canonicalCityName(r.city)) + '"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
+    return '<article class="story-card" id="memory-record-' + originalIndex + '" tabindex="-1" data-record-city="' + escapeHtml(window.MapLabelLayout.canonicalCityName(r.city)) + '"><div class="story-card-head"><div><time>' + escapeHtml(window.MapLabelLayout.formatDateRange(r.date)) + '</time><h3>' +
       escapeHtml(r.title || "") + '</h3>' + (r.city && r.city !== r.title ? '<span class="story-card-city">' + escapeHtml(r.city) + '</span>' : '') + '</div><div class="story-card-actions">' +
       recordActions + '</div></div>' + (r.author_name ? '<span class="story-author">' + escapeHtml(r.author_name) + '</span>' : '') + '<p class="story-card-description">' +
       escapeHtml(r.description || "") + '</p>' + (r.moods.length ? '<div class="story-moods">' + r.moods.map(function(mood) { return '<span>' + escapeHtml(mood) + '</span>'; }).join("") + '</div>' : '') +
@@ -2756,6 +2726,7 @@ function renderTodos() {
 
 // ========== Render Photos ==========
 function renderPhotos() {
+  renderHomeCorridor();
   var grid = document.querySelector("#gallery-grid");
   if (!grid) return;
   if (!state.photos.length) {

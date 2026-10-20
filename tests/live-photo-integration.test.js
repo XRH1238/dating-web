@@ -141,7 +141,7 @@ test('查看器保持已验证版本且页面入口使用本次缓存版本', ()
   assert.match(html, /live-photo\.js\?v=20260922-1/);
   assert.match(html, /media-viewer\.js\?v=20260923-1/);
   ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261013-3'));
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261020-1'));
   });
 });
 

@@ -1,13 +1,14 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>我们的出游小站</title>
-    <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css?v=20261013-3" />
+    <title>恋爱旅行簿 · 一起走过的地方</title>
+    <link rel="stylesheet" href="styles.css?v=20261020-1" />
+    <link rel="stylesheet" href="travel-corridor.css?v=20261020-1" />
   </head>
-  <body data-authenticated="false">
+  <body class="corridor-site" data-authenticated="false">
+    <a class="corridor-skip" href="#anniversary">跳过长廊，查看旅行簿</a>
     <header class="site-header">
       <a class="brand" href="#home" aria-label="回到首页">
         <span class="brand-mark">♡</span>
@@ -30,39 +31,36 @@
       </div>
     </header>
     <div class="cloud-status" id="cloud-status" role="status">正在连接后端...</div>
-    <p class="privacy-notice" id="privacy-notice">这里只展示公开精选。登录后，我们可以重温完整的故事。</p>
 
     <main id="home">
-      <section class="hero hero-stage">
-        <div class="hero-media" aria-hidden="true">
-          <span style="--hero-image: url('assets/images/hero-romantic-santorini.jpg'); --slide-index: 0"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2400&q=92'); --slide-index: 1"></span>
-          <span style="--hero-image: url('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=2400&q=92'); --slide-index: 2"></span>
-        </div>
-        <div class="hero-effects" aria-hidden="true">
-          <span class="hero-glow hero-glow-one"></span>
-          <span class="hero-glow hero-glow-two"></span>
-          <span class="hero-sparkle-field"></span>
-        </div>
-        <div class="hero-content">
-          <p class="eyebrow">For us, every road has a date</p>
-          <h1><span>记录我们一起走过的</span><span>城市、海边和日落</span></h1>
-          <p class="hero-copy">
-            把走过的城市、当时的心情和沿途照片，慢慢连成我们的故事。
-          </p>
-          <div class="hero-actions">
-            <a class="button primary" href="#anniversary">看纪念日</a>
-            <a class="button secondary" href="#todo">写下想做的事</a>
+      <section class="travel-corridor is-flat" id="travel-corridor" aria-labelledby="corridor-title">
+        <div class="corridor-viewport">
+          <div class="corridor-intro">
+            <h1 id="corridor-title">一起走过的地方。</h1>
+            <p>慢慢看，都是我们的回忆。</p>
           </div>
+          <div class="corridor-wall" aria-label="旅行照片"></div>
+          <p class="corridor-status" id="corridor-status" role="status">登录后，走进我们的照片长廊。</p>
+          <div class="corridor-controls" hidden>
+            <span class="corridor-count" id="corridor-count"></span>
+            <button class="corridor-step" type="button" data-corridor-step="-1" aria-label="向后看照片">‹</button>
+            <button class="corridor-step" type="button" data-corridor-step="1" aria-label="向前看照片">›</button>
+            <button type="button" data-corridor-mode>平面浏览</button>
+          </div>
+          <div class="corridor-entry">
+            <p class="corridor-scroll-hint">向下滚动，慢慢向前</p>
+            <a href="#anniversary">打开旅行簿 <span aria-hidden="true">↗</span></a>
+          </div>
+          <div class="corridor-progress" aria-hidden="true"><span class="corridor-progress-fill"></span></div>
         </div>
       </section>
-
+      <div class="travel-notebook">
+        <p class="privacy-notice" id="privacy-notice">这里只展示公开精选。登录后，我们可以重温完整的故事。</p>
       <a class="next-trip-strip" href="#plans" aria-label="查看下一次出游计划">
         <div class="trip-strip-heading">
           <span class="card-kicker" id="next-trip-label">下一次出游</span>
           <small>Next Journey</small>
         </div>
-        <img class="trip-strip-photo" src="assets/images/trip-xiamen.jpg" alt="厦门海边与世茂海峡大厦" />
         <div class="trip-strip-item">
           <span>目的地</span>
           <strong id="next-trip-title">还没有填写</strong>
@@ -79,7 +77,6 @@
           <small>一起慢慢走</small>
         </div>
         <span class="trip-strip-action">查看计划 <b aria-hidden="true">→</b></span>
-        <span class="trip-strip-shine" aria-hidden="true"></span>
       </a>
 
       <section class="section recent-memories" aria-label="最近一次回忆" id="recent-memory"></section>
@@ -270,6 +267,7 @@
         <p class="media-upload-status" id="gallery-media-status" role="status" aria-live="polite"></p>
         <div class="gallery-grid" id="gallery-grid" aria-live="polite"></div>
       </section>
+      </div>
     </main>
 
     <div class="panel" id="quick-panel" aria-hidden="true" data-auth-write>
@@ -456,6 +454,22 @@
       </form>
     </dialog>
 
+    <dialog class="corridor-memory" id="corridor-memory" aria-labelledby="corridor-memory-title">
+      <div class="corridor-memory-shell">
+        <button class="corridor-memory-close" type="button" data-memory-close aria-label="关闭这段回忆">×</button>
+        <div class="corridor-memory-image"><img alt="" /></div>
+        <div class="corridor-memory-copy">
+          <time id="corridor-memory-date"></time>
+          <h2 id="corridor-memory-title"></h2>
+          <p id="corridor-memory-body"></p>
+          <div class="corridor-memory-actions">
+            <button type="button" data-memory-hd>查看高清照片</button>
+            <a data-memory-record hidden>查看完整记录</a>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
     <dialog class="media-viewer" id="media-viewer" aria-labelledby="media-viewer-title">
       <div class="media-viewer-shell">
         <h2 class="sr-only" id="media-viewer-title">高清媒体查看器</h2>
@@ -477,7 +491,7 @@
     </dialog>
 
     <footer class="footer">
-      <p>Made for our little trips. 登录后可安全保存，地图路线和纪念日提醒还会继续完善。</p>
+      <p>一起出发，也一起记得。</p>
     </footer>
 
     <script src="auth-client.js?v=20260905-1"></script>
@@ -523,6 +537,10 @@
       <form id="gallery-trip-form"><label for="gallery-trip-select">选择旅行</label><select id="gallery-trip-select" name="trip_key"><option value="">暂不关联</option></select><p id="gallery-trip-status" role="status"></p><button class="button primary" type="submit">保存关联</button></form>
     </dialog>
     <script src="travel-experience.js?v=20261013-1"></script>
-    <script src="script.js?v=20261013-3"></script>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <script src="assets/vendor/ScrollTrigger.min.js"></script>
+    <script src="travel-corridor.js?v=20261020-1"></script>
+    <script src="travel-corridor-selection.js?v=20261020-1"></script>
+    <script src="script.js?v=20261020-1"></script>
   </body>
 </html>
