@@ -97,9 +97,10 @@ test('云端同步成功后状态条会自动收起', () => {
 });
 
 test('本次修改的页面资源使用正确缓存版本', () => {
-  ['styles.css', 'script.js'].forEach(asset => {
-    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261020-1'));
+  ['styles.css'].forEach(asset => {
+    assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20261025-1'));
   });
+  assert.match(html,/script\.js\?v=20261025-1/);
   ['storage-object-ref.js'].forEach(asset => {
     assert.match(html, new RegExp(asset.replace('.', '\\.') + '\\?v=20260915-1'));
   });
@@ -120,9 +121,9 @@ test('首页使用真实相册长廊并保留全部功能锚点', () => {
   assert.match(script, /photos: state.photos, records: state.records/);
 });
 test('长廊提供平面模式、键盘按钮和系统减少动态效果适配', () => {
-  assert.match(html, /data-corridor-mode/);
-  assert.match(html, /data-corridor-step="-1"/);
-  assert.match(html, /data-corridor-step="1"/);
+  assert.match(html, /data-d-mode/);
+  assert.match(html, /data-d-step="-1"/);
+  assert.match(html, /data-d-step="1"/);
   assert.match(html, /跳过长廊/);
   assert.match(corridorScript, /prefers-reduced-motion: reduce/);
   assert.match(corridorScript, /gsap.matchMedia/);
@@ -130,4 +131,19 @@ test('长廊提供平面模式、键盘按钮和系统减少动态效果适配',
   assert.match(corridorCss, /prefers-reduced-motion:reduce/);
   assert.match(corridorCss, /object-fit: contain|object-fit:contain/);
   assert.doesNotMatch(corridorCss, /(?:^|[;\s])filter:|backdrop-filter:\s*blur|text-shadow:/);
+});
+
+test('整合版使用可部署的相对资源，后续功能与首页在同一文档',()=>{
+  assert.match(html,/immersive-corridor\.css\?v=20261025-1/);
+  assert.match(html,/travel-stars\.js\?v=20261025-1/);
+  assert.match(html,/immersive-corridor\.js\?v=20261025-1/);
+  assert.doesNotMatch(html,/__design|variant-d|<base\b/);
+  const integrated=fs.readFileSync(path.join(root,'immersive-corridor.js'),'utf8');
+  const css=fs.readFileSync(path.join(root,'immersive-corridor.css'),'utf8');
+  assert.doesNotMatch(integrated,/\/Users\/|__design|perf=1/);
+  assert.match(integrated,/link\.href='#memory-record-'/);
+  assert.doesNotMatch(css,/\.travel-notebook[^{}]*\{\s*display:none/);
+  // Homepage colors must not replace the ink token used by existing forms/dialogs.
+  assert.doesNotMatch(css,/body\.immersive-site\{[^}]*--ink:/);
+  for(const id of ['anniversary','plans','records','todo','gallery'])assert.match(html,new RegExp('href="#'+id+'"'));
 });

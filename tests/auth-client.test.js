@@ -803,7 +803,7 @@ test('认证请求超时返回中文超时错误', async () => {
   await assert.rejects(() => client.signInWithPassword('a@example.com', 'password'), /认证请求超时/);
 });
 
-test('refresh 超时释放 single-flight、清会话并通知 SIGNED_OUT', async () => {
+test('refresh 超时释放 single-flight，保留刷新凭据以供下次重试', async () => {
   assert.equal(typeof authModule.createAuthClient, 'function');
   const storage = createStorage({
     'dating-web:auth:v1': JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires_at: 1700000060 }),
@@ -815,10 +815,10 @@ test('refresh 超时释放 single-flight、清会话并通知 SIGNED_OUT', async
   client.onAuthStateChange((event, value) => events.push([event, value]));
 
   await assert.rejects(() => client.getAccessToken(), /认证请求超时/);
-  assert.equal(await client.getAccessToken(), null);
-  assert.equal(calls.length, 1);
-  assert.equal(storage.value('dating-web:auth:v1'), undefined);
-  assert.deepEqual(events, [['SIGNED_OUT', null]]);
+  await assert.rejects(() => client.getAccessToken(), /认证请求超时/);
+  assert.equal(calls.length, 2);
+  assert.ok(storage.value('dating-web:auth:v1'));
+  assert.deepEqual(events.map(e=>e[0]), ['SESSION_RETRY','SESSION_RETRY']);
 });
 
 test('browser UMD 可实例化并使用默认 fetch', async () => {
@@ -851,4 +851,48 @@ test('CommonJS 不污染 globalThis，浏览器 UMD 挂载 window.AuthClient', (
   vm.runInNewContext(source, browserContext, { filename: 'auth-client.js' });
   assert.equal(typeof browserWindow.AuthClient.createAuthClient, 'function');
   assert.equal(browserContext.globalThis.AuthClient, undefined);
+});
+
+test('临时断网刷新不删除可恢复会话，且不会返回过期访问令牌',async()=>{
+  const storage=createStorage({'dating-web:auth:v1':JSON.stringify({access_token:'expired',refresh_token:'keep',expires_at:1700000000,user:{id:'u1'}})});
+  let offline=true;
+  const {client}=createHarness(async()=>{if(offline)throw new Error('offline');return jsonResponse({access_token:'renewed',refresh_token:'renewed-refresh',expires_in:3600});},{storage,now:()=>1700000000});
+  const events=[];client.onAuthStateChange(e=>events.push(e));
+  await assert.rejects(()=>client.getAccessToken(),/网络/);
+  assert.ok(storage.value('dating-web:auth:v1'));
+  assert.ok(!events.includes('SIGNED_OUT'));
+  offline=false;assert.equal(await client.getAccessToken(),'renewed');
+});
+
+test('另一标签已刷新时复用同账号新会话，不重复使用旧刷新令牌',async()=>{
+  const storage=createStorage({'dating-web:auth:v1':JSON.stringify({access_token:'old',refresh_token:'old-r',expires_at:1700000000,user:{id:'u1'}})});
+  const {client,calls}=createHarness(async()=>{throw new Error('不应再调用刷新');},{storage,now:()=>1700000000});
+  storage.setItem('dating-web:auth:v1',JSON.stringify({access_token:'other-tab-new',refresh_token:'new-r',expires_at:1700003600,user:{id:'u1'}}));
+  assert.equal(await client.getAccessToken(),'other-tab-new');assert.equal(calls.length,0);
+});
+
+test('跨标签锁让共享会话只刷新一次，退出同步不会复活私密身份',async()=>{
+ const storage=createStorage({'dating-web:auth:v1':JSON.stringify({access_token:'old',refresh_token:'rotate-once',expires_at:1700000000,user:{id:'u1'}})});
+ let queue=Promise.resolve(),requests=0;const locks={request(_name,fn){const next=queue.then(fn);queue=next.catch(()=>{});return next;}};
+ const fetchImpl=async()=>{requests++;return jsonResponse({access_token:'new',refresh_token:'new-refresh',expires_in:3600,user:{id:'u1'}});};
+ const opts={storage,locks,now:()=>1700000000};const a=createHarness(fetchImpl,opts).client,b=createHarness(fetchImpl,opts).client;
+ assert.deepEqual(await Promise.all([a.getAccessToken(),b.getAccessToken()]),['new','new']);assert.equal(requests,1);
+ const events=[];b.onAuthStateChange(e=>events.push(e));storage.removeItem('dating-web:auth:v1');b.syncFromStorage();assert.equal(await b.getSession(),null);assert.deepEqual(events,['SIGNED_OUT']);
+});
+
+test('真实认证拒绝仍删除会话，服务器暂时故障保留会话',async()=>{
+ for(const status of [400,401,403,429,503]){
+  const storage=createStorage({'dating-web:auth:v1':JSON.stringify({access_token:'old',refresh_token:'refresh',expires_at:1700000000,user:{id:'u1'}})});
+  const {client}=createHarness(async()=>jsonResponse({message:'failure'},status),{storage,now:()=>1700000000});
+  await assert.rejects(()=>client.getAccessToken());assert.equal(!!storage.value('dating-web:auth:v1'),status===429||status>=500);
+ }
+});
+
+test('通行密钥登录也走最小会话投影，退出后迟到验证不能复活登录',async()=>{
+ let complete;
+ const passkeyApi={create:()=>({signIn:()=>new Promise(resolve=>{complete=resolve;})})};
+ const {client,storage}=createHarness(async()=>jsonResponse(null),{passkeyApi,now:()=>1700000000});
+ const pending=client.signInWithPasskey();await client.signOut();complete({access_token:'late',refresh_token:'late-r',expires_in:3600,user:{id:'u1'}});await assert.rejects(()=>pending,/过期/);assert.equal(storage.value('dating-web:auth:v1'),undefined);
+ const good=createHarness(async()=>jsonResponse(null),{passkeyApi:{create:()=>({signIn:async()=>({access_token:'verified',refresh_token:'refresh',expires_in:3600,user:{id:'u1',user_metadata:{secret:'discard',display_name:'Name'}}})})},now:()=>1700000000});
+ const session=await good.client.signInWithPasskey();assert.equal(session.access_token,'verified');assert.deepEqual(session.user.user_metadata,{display_name:'Name'});
 });
