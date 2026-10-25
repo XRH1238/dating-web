@@ -200,12 +200,17 @@ async function init() {
 }
 
 // ========== Authentication ==========
+var authRestoreInProgress = true;
 function connectAuth() {
   try {
+    function browserStorage(name) { try { return window[name]; } catch (_) { return null; } }
+    state.authStorage = window.BrowserAuthStorage ? window.BrowserAuthStorage.create({ persistent: browserStorage("localStorage"), temporary: browserStorage("sessionStorage") }) : null;
     state.authClient = window.AuthClient.createAuthClient({
       url: supabaseConfig.url,
       key: supabaseConfig.key,
+      storage: state.authStorage || undefined,
     });
+    if (window.AuthSecurity) window.AuthSecurity.bind({ client: state.authClient, storage: state.authStorage });
     state.authClient.onAuthStateChange(function(event, session) {
       handleAuthStateChange(event, session).catch(function() {
         setCloudStatus("offline");
@@ -220,6 +225,7 @@ function connectAuth() {
 
 async function restoreAuth() {
   if (!state.authClient) {
+    authRestoreInProgress = false;
     updateAuthUi();
     return;
   }
@@ -239,11 +245,14 @@ async function restoreAuth() {
   } catch (_) {
     if (restoreGeneration !== authMutationGeneration) return;
     state.authUser = null;
+  } finally {
+    authRestoreInProgress = false;
   }
   updateAuthUi();
 }
 
 async function handleAuthStateChange(event, session) {
+  if (event === "SESSION_RETRY") { showCloudNotice("连接暂时中断，已保留登录会话，恢复网络后会重试。", true); return; }
   var hadUser = !!state.authUser;
   var previousId = state.authUser && state.authUser.id;
   var nextId = session && session.user && session.user.id;
@@ -275,7 +284,7 @@ async function handleAuthStateChange(event, session) {
     loadRemoteData().catch(function() { setCloudStatus('offline'); });
     return;
   }
-  if ((becameAuthenticated || identityChanged) && event !== "TOKEN_REFRESHED") {
+  if ((becameAuthenticated || identityChanged) && (event !== "TOKEN_REFRESHED" || !authRestoreInProgress)) {
     connectSupabase();
     await preparePrivateSpace();
     connectPrivateStores();
@@ -393,6 +402,7 @@ function closeDialog(dialog) {
 }
 
 function showAuthDialog(message) {
+  if (window.AuthSecurity) window.AuthSecurity.refresh();
   var status = document.querySelector("#auth-login-status");
   if (status) status.textContent = message || "";
   showDialog(authDialog);
@@ -401,6 +411,7 @@ function showAuthDialog(message) {
 }
 
 function openProfileDialog() {
+  if (window.AuthSecurity) window.AuthSecurity.refresh();
   if (!requireAuthenticated()) return;
   var profile = authProfile(state.authUser);
   if (profileForm && profileForm.elements.display_name) profileForm.elements.display_name.value = profile.displayName;
@@ -582,6 +593,7 @@ function bindEvents() {
     submit.disabled = true;
     status.textContent = "正在登录...";
     try {
+      if (state.authStorage) state.authStorage.setTrusted(fd.get("trust_browser") === "on");
       await state.authClient.signInWithPassword(String(fd.get("email") || "").trim(), String(fd.get("password") || ""));
       if (!isCurrentFormSave(saveContext)) return;
       authLoginForm.reset();
@@ -3171,7 +3183,7 @@ async function fetchPrivateAnniversary() {
 
 function visibilityButton(kind, item) {
   if (!state.isMember || !item.id) return '';
-  return '<button type="button" class="visibility-toggle" data-visibility-table="' + kind + '" data-visibility-id="' + escapeHtml(item.id) + '">' + (item.is_public ? '公开精选 · 收回' : '仅我们可见 · 设为精选') + '</button>';
+  return '<button type="button" class="visibility-toggle" data-visibility-table="' + kind + '" data-visibility-id="' + escapeHtml(item.id) + '">' + (item.is_public ? '公开精选 · 收回' : '设为公开精选') + '</button>';
 }
 
 async function toggleVisibility(button) {

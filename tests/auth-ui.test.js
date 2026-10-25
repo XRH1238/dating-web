@@ -788,3 +788,12 @@ test('退出和动态胶囊入口使用当前鉴权语义', () => {
   assert.match(script, /newCapsuleButton\.addEventListener\("click", function\(\) \{\s*if \(!requireAuthenticated\(\)\) return;/);
   assert.doesNotMatch(html, /下一版可以继续开发登录/);
 });
+
+test('启动断网后后台恢复的 TOKEN_REFRESHED 会重新准备私密空间',async()=>{
+ let creations=0,reads=0;
+ const harness=createScriptHarness({window:{CloudDataClient:{createCloudDataClient(){creations++;return{async select(){reads++;return[];},async insert(){throw Error('不应写入');}};}}}});
+ harness.hooks.setState({authUser:null,authClient:{async getSession(){throw Error('offline');}}});
+ await harness.hooks.restoreAuth();
+ await harness.hooks.handleAuthStateChange('TOKEN_REFRESHED',{user:{id:'u1'}});
+ assert.equal(creations,1);assert.ok(reads>0);assert.equal(harness.hooks.getState().authUser.id,'u1');
+});

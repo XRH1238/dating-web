@@ -4,10 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>恋爱旅行簿 · 一起走过的地方</title>
-    <link rel="stylesheet" href="styles.css?v=20261020-1" />
+    <link rel="stylesheet" href="styles.css?v=20261025-1" />
     <link rel="stylesheet" href="travel-corridor.css?v=20261020-1" />
+    <link rel="stylesheet" href="immersive-corridor.css?v=20261025-1" />
   </head>
-  <body class="corridor-site" data-authenticated="false">
+  <body class="corridor-site immersive-site" data-authenticated="false" data-passkey-origin="https://xrh1238.github.io">
     <a class="corridor-skip" href="#anniversary">跳过长廊，查看旅行簿</a>
     <header class="site-header">
       <a class="brand" href="#home" aria-label="回到首页">
@@ -33,25 +34,12 @@
     <div class="cloud-status" id="cloud-status" role="status">正在连接后端...</div>
 
     <main id="home">
-      <section class="travel-corridor is-flat" id="travel-corridor" aria-labelledby="corridor-title">
-        <div class="corridor-viewport">
-          <div class="corridor-intro">
-            <h1 id="corridor-title">一起走过的地方。</h1>
-            <p>慢慢看，都是我们的回忆。</p>
-          </div>
-          <div class="corridor-wall" aria-label="旅行照片"></div>
-          <p class="corridor-status" id="corridor-status" role="status">登录后，走进我们的照片长廊。</p>
-          <div class="corridor-controls" hidden>
-            <span class="corridor-count" id="corridor-count"></span>
-            <button class="corridor-step" type="button" data-corridor-step="-1" aria-label="向后看照片">‹</button>
-            <button class="corridor-step" type="button" data-corridor-step="1" aria-label="向前看照片">›</button>
-            <button type="button" data-corridor-mode>平面浏览</button>
-          </div>
-          <div class="corridor-entry">
-            <p class="corridor-scroll-hint">向下滚动，慢慢向前</p>
-            <a href="#anniversary">打开旅行簿 <span aria-hidden="true">↗</span></a>
-          </div>
-          <div class="corridor-progress" aria-hidden="true"><span class="corridor-progress-fill"></span></div>
+      <section class="d-corridor" id="travel-corridor" aria-labelledby="corridor-title">
+        <div class="d-stage">
+          <div class="d-intro"><h1 id="corridor-title">一起走过的地方。</h1><p>慢慢看，都是我们的回忆。</p></div>
+          <div class="d-frame"><button class="d-star-toggle" data-d-stars type="button" aria-label="暂停星尘动画" aria-pressed="false" title="暂停星尘">✧</button><div class="d-space"><div class="d-world" aria-label="旅行照片"></div></div><p id="corridor-status" role="status">登录后，走进我们的照片长廊。</p></div>
+          <div class="d-controls" aria-label="照片浏览"><span class="d-count"></span><button type="button" data-d-step="-1" aria-label="向后看照片">←</button><button type="button" data-d-step="1" aria-label="向前看照片">→</button><p class="d-hint"><a href="#anniversary">打开旅行簿 ↓</a></p><button type="button" data-d-mode>平面浏览</button></div>
+          <div class="d-progress" aria-hidden="true"><span class="d-progress-fill"></span></div>
         </div>
       </section>
       <div class="travel-notebook">
@@ -416,9 +404,12 @@
         <div class="auth-dialog-heading"><div><span class="section-label">Member Access</span><h2 id="auth-dialog-title">登录后继续编辑</h2></div><button class="auth-dialog-close" type="button" data-auth-close="auth-dialog" aria-label="关闭登录窗口">×</button></div>
         <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
         <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
+        <label class="auth-trust-option"><input type="checkbox" name="trust_browser" /> <span>信任此浏览器，保持登录</span></label>
+        <p class="auth-security-note">仅在自己的设备上勾选。不勾选时，只在当前标签页保留会话。</p>
         <p class="form-status" id="auth-login-status" role="status" aria-live="polite"></p>
         <div class="auth-dialog-actions"><button class="auth-link-button" id="auth-forgot-password" type="button">忘记密码</button><button class="button primary" type="submit">登录</button></div>
       </form>
+      <div class="auth-passkey-section"><button class="button secondary" type="button" id="auth-passkey-login" disabled>使用通行密钥登录</button><p class="auth-security-note" id="auth-passkey-status" role="status">正在检查通行密钥…</p></div>
     </dialog>
 
     <dialog class="auth-dialog profile-dialog" id="profile-dialog" aria-labelledby="profile-dialog-title">
@@ -442,6 +433,12 @@
           <button class="button primary" type="submit">保存</button>
         </div>
       </form>
+      <section class="auth-passkey-section" aria-labelledby="profile-security-title"><h3 id="profile-security-title">登录与安全</h3>
+        <label class="auth-trust-option"><input type="checkbox" id="profile-trust-browser" /> <span>信任此浏览器，保持登录</span></label>
+        <p class="auth-security-note">关闭后，当前标签页仍可继续使用；新打开的标签页需要重新登录。</p>
+        <button class="button secondary" type="button" id="profile-passkey-add" disabled>添加通行密钥</button>
+        <p class="auth-security-note" id="profile-security-status" role="status"></p><ul id="profile-passkey-list" class="auth-passkey-list"></ul>
+      </section>
     </dialog>
 
     <dialog class="auth-dialog" id="password-recovery-dialog" aria-labelledby="password-recovery-title">
@@ -494,7 +491,10 @@
       <p>一起出发，也一起记得。</p>
     </footer>
 
-    <script src="auth-client.js?v=20260905-1"></script>
+    <script src="browser-auth-storage.js?v=20261025-1"></script>
+    <script src="passkey-auth.js?v=20261025-1"></script>
+    <script src="auth-client.js?v=20261025-1"></script>
+    <script src="auth-security.js?v=20261025-1"></script>
     <script src="cloud-data-client.js?v=20261013-1"></script>
     <script src="media-upload.js?v=20260828-1"></script>
     <script src="live-photo.js?v=20260922-1"></script>
@@ -541,6 +541,8 @@
     <script src="assets/vendor/ScrollTrigger.min.js"></script>
     <script src="travel-corridor.js?v=20261020-2"></script>
     <script src="travel-corridor-selection.js?v=20261020-1"></script>
-    <script src="script.js?v=20261020-1"></script>
+    <script src="travel-stars.js?v=20261025-1"></script>
+    <script src="immersive-corridor.js?v=20261025-1"></script>
+    <script src="script.js?v=20261025-1"></script>
   </body>
 </html>

@@ -265,14 +265,31 @@
       }
     }
 
+    function adoptNewerStoredSession() {
+      if (!session || !storage || !session.user) return false;
+      var saved = loadSession();
+      if (!saved || !saved.user || saved.user.id !== session.user.id || saved.access_token === session.access_token || saved.expires_at <= session.expires_at) return false;
+      setSession(saved, "TOKEN_REFRESHED");
+      return true;
+    }
+
+    function retryableRefreshError(error) {
+      return !!(error && (error.status === 429 || error.status >= 500 || /认证网络请求失败|认证请求超时/.test(error.message || "")));
+    }
+
     function refreshSession() {
+      if (adoptNewerStoredSession() && !shouldRefresh(session)) return Promise.resolve(publicSession(session));
       if (!session || !session.refresh_token) return Promise.resolve(publicSession(session));
       var oldSession = session;
       var refreshGeneration = mutationGeneration;
       if (pendingRefresh && pendingRefresh.session === oldSession && pendingRefresh.generation === refreshGeneration) {
         return pendingRefresh.promise;
       }
-      var promise = (async function() {
+      var runRefresh = async function() {
+        if (session !== oldSession || mutationGeneration !== refreshGeneration) return null;
+        if (adoptNewerStoredSession() && !shouldRefresh(session)) return publicSession(session);
+        oldSession = session;
+        if (pendingRefresh && pendingRefresh.promise) pendingRefresh.session = oldSession;
         try {
           var response = await authRequest("/auth/v1/token?grant_type=refresh_token", {
             method: "POST",
@@ -287,10 +304,18 @@
           return setSession(refreshed, "TOKEN_REFRESHED");
         } catch (error) {
           if (session !== oldSession || mutationGeneration !== refreshGeneration) return null;
+          var recovered = adoptNewerStoredSession();
+          if (recovered && !shouldRefresh(session)) return publicSession(session);
+          if (recovered || retryableRefreshError(error)) {
+            notify("SESSION_RETRY", session);
+            throw error;
+          }
           clearSession("SIGNED_OUT");
           throw error;
         }
-      })();
+      };
+      var locks = options.locks || (typeof navigator !== "undefined" && navigator.locks);
+      var promise = locks && typeof locks.request === "function" ? locks.request(storageKey + ":refresh", runRefresh) : runRefresh();
       pendingRefresh = { session: oldSession, generation: refreshGeneration, promise: promise };
       promise.then(function() {
         if (pendingRefresh && pendingRefresh.promise === promise) pendingRefresh = null;
@@ -320,6 +345,19 @@
       }
     }
 
+    function passkeys(generation) {
+      var api = options.passkeyApi || (typeof module === "object" && module.exports ? require('./passkey-auth.js') : typeof window !== "undefined" && window.PasskeyAuth);
+      if (!api) throw new Error("通行密钥暂不可用");
+      return api.create({
+        secure: options.secureContext === undefined ? typeof isSecureContext !== "undefined" && isSecureContext : options.secureContext,
+        PublicKeyCredential: options.PublicKeyCredential || (typeof PublicKeyCredential !== "undefined" ? PublicKeyCredential : null),
+        credentials: options.credentials || (typeof navigator !== "undefined" && navigator.credentials),
+        request: authRequest,
+        token: async function() { var value = await getCurrentSession(); return value && value.access_token; },
+        isCurrent: function() { return generation === mutationGeneration; }
+      });
+    }
+
     return {
       signInWithPassword: async function(email, password) {
         var generation = beginMutation();
@@ -333,6 +371,21 @@
         if (!nextSession) throw new Error("认证响应无效");
         return setSession(nextSession, "SIGNED_IN");
       },
+
+      getPasskeyStatus: async function() {
+        var client = passkeys(mutationGeneration);
+        return { supported: client.supported(), enabled: await client.enabled() };
+      },
+      signInWithPasskey: async function() {
+        var generation = beginMutation();
+        var response = await passkeys(generation).signIn();
+        if (generation !== mutationGeneration) throw staleMutationError();
+        if (!hasValidPasswordResponse(response)) throw new Error("认证响应无效");
+        return setSession(cleanSession(response, null, now()), "SIGNED_IN");
+      },
+      registerPasskey: function() { return passkeys(mutationGeneration).register(); },
+      listPasskeys: function() { return passkeys(mutationGeneration).list(); },
+      deletePasskey: function(id) { return passkeys(mutationGeneration).remove(id); },
 
       signOut: async function() {
         var oldSession = session;
@@ -354,6 +407,14 @@
       },
 
       getSession: getCurrentSession,
+
+      syncFromStorage: function() {
+        var saved = loadSession();
+        if ((!saved && !session) || (saved && session && saved.access_token === session.access_token)) return;
+        beginMutation();
+        session = saved;
+        notify(saved ? "SIGNED_IN" : "SIGNED_OUT", saved);
+      },
 
       getAccessToken: async function() {
         if (!session) return null;
